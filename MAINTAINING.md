@@ -1,6 +1,6 @@
 # Mushroom Pi — Maintaining It (Packaging & Release)
 
-This is the maintainer-facing half: packaging internals and the release process. Operators should read `DEPLOYMENT.md` instead. This document describes what happens; the agent-facing rules for editing the machinery here live in `REFERENCE.md`.
+This is the maintainer-facing half: packaging internals and the release process. Operators should read the deployment guide on the published documentation site instead: [`github.com/mushroom-pi/mushpi-docs`](https://github.com/mushroom-pi/mushpi-docs). This document describes what happens; the agent-facing rules for editing the machinery here live in `REFERENCE.md`.
 
 ## How the image is built
 
