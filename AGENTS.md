@@ -4,7 +4,7 @@ This repo is the **release/packaging layer** for the Mushroom Pi system. It owns
 
 It is **not a runtime tier** and contains no application code. The orchestration root (its sibling directory) owns the agent definitions, the full-stack architecture context, and the cross-repo contracts. The sub-repos — `mushpi-server`, `mushpi-client`, `mushpi-grow`, `mushpi-mock`, `mushpi-docs` — are sibling git repos, never vendored here.
 
-On-demand gotchas for editing this layer live in [`REFERENCE.md`](./REFERENCE.md); human procedures live in [`DEPLOYMENT.md`](./DEPLOYMENT.md) (operators) and [`MAINTAINING.md`](./MAINTAINING.md) (maintainers).
+On-demand gotchas for editing this layer live in [`REFERENCE.md`](./REFERENCE.md). The **operator-facing** deployment guide lives on the published documentation site (`github.com/mushroom-pi/mushpi-docs` — its `deployment/` pages, with remote access under `configuration/`); this repo keeps release-repo notes in [`DEPLOYMENT.md`](./DEPLOYMENT.md) and the packaging and release process in [`MAINTAINING.md`](./MAINTAINING.md).
 
 ## Map
 
@@ -22,9 +22,9 @@ On-demand gotchas for editing this layer live in [`REFERENCE.md`](./REFERENCE.md
 | `release.json` | Release manifest: `release`/`server`/`client`/`firmware` SemVer plus integer `api_version` |
 | `scripts/verify-release.sh` | Release-consistency check: tag⇔manifest, manifest⇔committed component versions, spec versions |
 | `scripts/docker-entrypoint.sh` | Container entrypoint (baked into the image): starts as root, creates `/data` plus its `images`/`logs` subdirs, ensures they are owned by `node:node`, drops privileges with `setpriv`, then `exec`s the CMD as the `node` user; fails loudly if run unprivileged and `/data` is not writable |
-| `DEPLOYMENT.md` | Operator guide — running the system (human register) |
+| `DEPLOYMENT.md` | Release-repo notes plus a pointer to the published operator guide — the operator-facing procedures (provisioning, self-hosting, first boot, Pico setup, updates, backup, remote access) now live on the documentation site, `github.com/mushroom-pi/mushpi-docs`. Human register |
 | `MAINTAINING.md` | Maintainer guide — packaging and the release process (human register) |
-| `README.md` | Repo entry point for self-hosters |
+| `README.md` | Repo entry point for self-hosters, pointing at the published guide |
 | `AGENTS.md` | This file — always-loaded agent core |
 | `REFERENCE.md` | On-demand agent gotchas for this packaging layer |
 
@@ -52,7 +52,7 @@ Run from this repo's root:
 - **`MUSHPI_DATA_DIR` / `MUSHPI_IMAGE_TAG` are compose *interpolation* vars** (read from `.env`/the environment, never passed into the container): the host directory bind-mounted at `/data` (default `./mushpi-data`) and the pulled image tag (default `latest`). The in-container layout (`SQLITE_PATH`, `UPLOAD_DIR`, `LOGS_PATH`) is fixed and must not be repointed.
 - **Dev builds never move `latest`.** `publish-dev.yml` (manual only) publishes a validated free-form tag plus `dev-sha-<short>`; `latest` and strict `vX.Y.Z` inputs are rejected and `flavor: latest=false` blocks auto-emission. `latest` remains owned solely by `publish.yml`.
 - **The shared build action stays dumb.** `.github/actions/build-image` is mechanical build/push only — callers own triggers, guards and tag/flavor policy, and `flavor` is passed explicitly by each caller. Never add ref logic or a release-vs-dev `mode` input to it.
-- **Register split:** agent rules live here and in `REFERENCE.md`; human procedures live in `DEPLOYMENT.md` and `MAINTAINING.md`. Do not put agent-directed instructions in the human-named docs, and do not restate them here. All three human-facing files (`DEPLOYMENT.md`, `MAINTAINING.md`, `README.md`) are **docs-tier**: the ops agents' edit permission maps exclude them, so an ops agent flags a needed change for the orchestrator to route rather than editing it.
+- **Register split:** agent rules live here and in `REFERENCE.md`; **operator-facing procedures live on the published documentation site** (`github.com/mushroom-pi/mushpi-docs` — its `deployment/` pages, with remote access under `configuration/`), while what stays in this repo is release-repo notes in `DEPLOYMENT.md` and the packaging and release process in `MAINTAINING.md`. Do not put agent-directed instructions in the human-named docs, and do not restate them here. All three human-facing files (`DEPLOYMENT.md`, `MAINTAINING.md`, `README.md`) are **docs-tier**: the ops agents' edit permission maps exclude them, so an ops agent flags a needed change for the orchestrator to route rather than editing it.
 
 ## ⛔ Data Deletion Prohibition
 
