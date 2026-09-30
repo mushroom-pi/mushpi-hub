@@ -3,6 +3,7 @@
 *
 
 !.gitignore
+!LICENSE
 !AGENTS.md
 !REFERENCE.md
 !README.md

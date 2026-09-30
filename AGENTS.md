@@ -18,6 +18,7 @@ On-demand gotchas for editing this layer live in [`REFERENCE.md`](./REFERENCE.md
 | `docker-compose.override.yml` | Local build toggle — **untracked by design**, absent from clones |
 | `.dockerignore` | Build-context exclusions |
 | `.gitignore` | Ignore-all-then-allowlist; the tracked set is exactly the packaging layer |
+| `LICENSE` | MIT — the packaging layer's licence, matching the application repositories |
 | `.env.example` | Env template (`PICO_ANNOUNCE_SECRET` required; optional `MUSHPI_DATA_DIR`, `MUSHPI_IMAGE_TAG`, `APP_HTTPS_ENABLED`, the opt-in rate-limit pair `MAX_REQUESTS`/`MAX_REQUESTS_TIME`, and app overrides) |
 | `release.json` | Release manifest: `release`/`server`/`client`/`firmware` SemVer plus integer `api_version` |
 | `scripts/verify-release.sh` | Release-consistency check: tag⇔manifest, manifest⇔committed component versions, spec versions |
