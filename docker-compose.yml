@@ -15,7 +15,7 @@ services:
     network_mode: host
 
     env_file:
-      - .env          # PICO_ANNOUNCE_SECRET, optional APP_HOST
+      - .env          # PICO_ANNOUNCE_SECRET
 
     environment:
       NODE_ENV: prod
