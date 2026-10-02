@@ -19,7 +19,7 @@ On-demand gotchas for editing this layer live in [`REFERENCE.md`](./REFERENCE.md
 | `.dockerignore` | Build-context exclusions |
 | `.gitignore` | Ignore-all-then-allowlist; the tracked set is exactly the packaging layer |
 | `LICENSE` | MIT — the packaging layer's licence, matching the application repositories |
-| `.env.example` | Env template (`PICO_ANNOUNCE_SECRET` required; optional `MUSHPI_DATA_DIR`, `MUSHPI_IMAGE_TAG`, `APP_HTTPS_ENABLED`, the opt-in rate-limit pair `MAX_REQUESTS`/`MAX_REQUESTS_TIME`, and app overrides) |
+| `.env.example` | Env template (`PICO_ANNOUNCE_SECRET` required; optional `MUSHPI_DATA_DIR`, `MUSHPI_IMAGE_TAG`, `APP_HTTPS_ENABLED`, the Swagger docs trio `DOCS_ENDPOINT`/`DOCS_USERNAME`/`DOCS_PASSWORD`, and the opt-in rate-limit pair `MAX_REQUESTS`/`MAX_REQUESTS_TIME`) |
 | `release.json` | Release manifest: `release`/`server`/`client`/`firmware` SemVer plus integer `api_version` |
 | `scripts/verify-release.sh` | Release-consistency check: tag⇔manifest, manifest⇔committed component versions, spec versions |
 | `scripts/docker-entrypoint.sh` | Container entrypoint (baked into the image, run under `dumb-init` as PID 1): starts as root, creates `/data` plus its `images`/`logs` subdirs, ensures they are owned by `node:node`, starts the container's own query-only mDNS resolver (skipped with a warning when not root, and non-fatal if it fails), drops privileges with `setpriv`, then `exec`s the CMD as the `node` user; fails loudly if run unprivileged and `/data` is not writable |
