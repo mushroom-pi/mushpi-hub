@@ -8,14 +8,17 @@ The image is built by `Dockerfile` from this repository's root as its Docker con
 
 ## Container Networking Notes (mDNS / `.local`)
 
-How the server reaches Pico units from inside the container. This is factual behavior of the current default-bridge setup, not a locked decision.
+How the server reaches Pico units from inside the container. This is factual behavior of the current setup, not a locked decision.
 
-- **mDNS (`.local`) does not resolve inside the container.** The server polls each unit at `http://{handle}.local:{port}` first, then falls back to the announced LAN IP. In the default-bridge container (a `-slim` image with no avahi/mDNS resolver), `.local` names never resolve — Docker's embedded DNS at `127.0.0.11` does not perform mDNS lookups. The primary mDNS poll address is therefore dead in Docker.
-- **Polling relies on the announced LAN IP fallback.** For the fallback to work, a unit must announce a real, routable LAN IP — which the Pico firmware does via `wlan.ifconfig()[0]`.
-- **Implications:**
-  - Every poll incurs a failed mDNS lookup before falling back to the IP (minor latency per unit, per 60s cycle).
-  - If a unit's DHCP lease changes its IP, the stored fallback IP goes stale until the unit re-announces (on boot or WiFi reconnect). The `.local` name was meant to be the stable identity, but it is non-functional in the container — so the IP is the only live path.
-- **Options if mDNS is ever desired:** `network_mode: host`, or an avahi/mDNS passthrough into the container. Neither is currently configured.
+The compose service runs with `network_mode: host` — the container shares the hub's network stack and sits directly on the LAN rather than behind Docker's NAT bridge. That is what lets the image carry its own name resolver and reach units by name.
+
+- **The image resolves `.local` names itself.** The image bakes in a small, **query-only** mDNS resolver (`avahi-daemon` plus the `libnss-mdns` NSS client), so the server resolves `http://{handle}.local:{port}` without depending on anything the host provides. Two properties matter operationally:
+  - **It never *publishes* names.** Publishing is disabled in the baked-in config on purpose: because the container shares the host's network namespace, a second responder claiming `.local` names would collide with the host's own mDNS stack. The resolver answers lookups only, so it cannot conflict with the hub's resolver.
+  - **A failure to start is not fatal.** The server boots regardless and logs a warning, then falls back to the address each unit last announced. The worst a failed resolver costs is `.local` resolution — never a boot.
+- **Host networking gives up isolation — and it is Linux-only.** The container is reachable on the host's interfaces exactly as the host is, with no network isolation. This is an accepted trade for a single-purpose appliance, not a free lunch. It also means host networking (and therefore this resolver) is Linux-only.
+- **The announced-address fallback is the safety net, not the primary path.** A unit is normally reached by its `.local` name; the server falls back to the address the unit last announced only when the name does not resolve (or the resolver failed to start). Because a unit's IP can drift on a DHCP lease change, the name — not the IP — is the stable identity.
+
+**Verifying resolution.** Inside the running container, run `getent hosts <unit>.local` **as the user the server runs as** — `docker exec --user node <container> getent hosts <unit>.local` — not as root, because a check run as root can mask a permission problem the `node` user would hit. Do **not** use `avahi-browse` or `avahi-resolve`: the resolver's D-Bus interface is deliberately switched off, so those tools fail even when `.local` resolution works.
 
 ## Version & Release Semantics (Normative)
 
