@@ -81,13 +81,70 @@ ENV NODE_ENV=prod
 # Activate Corepack (see client-build stage note).
 RUN corepack enable
 
-# Native-compile toolchain for better-sqlite3. Its install script tries a
-# prebuilt binary first but falls back to `node-gyp rebuild` (needs Python +
-# a C++ compiler). Install g++ which pulls the rest, then remove apt lists to
-# keep the layer lean.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 make g++ \
-    && rm -rf /var/lib/apt/lists/*
+# Native-compile toolchain for better-sqlite3 (its install script tries a
+# prebuilt binary first but falls back to `node-gyp rebuild`, needing Python +
+# a C++ compiler; g++ pulls the rest), plus the container's own mDNS resolver:
+# avahi-daemon resolves the growing units' `.local` names, libnss-mdns is the
+# NSS client the server's lookups go through, and dumb-init is PID 1 so the
+# daemonized resolver is reaped (see the ENTRYPOINT note below).
+#
+# policy-rc.d makes every invoke-rc.d call in this layer a no-op: the avahi
+# package's post-install otherwise tries to start the daemon, which fails with
+# no init system here and breaks the build. Removed again at the end of the
+# same layer, so the final image carries no leftover service-start suppression.
+RUN printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d \
+    && chmod +x /usr/sbin/policy-rc.d \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3 make g++ \
+        avahi-daemon libnss-mdns dumb-init \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -f /usr/sbin/policy-rc.d \
+    && test -x /usr/bin/dumb-init
+
+# Query-only resolver configuration, replacing the package default. The daemon
+# answers `.local` lookups but announces nothing:
+#   - enable-dbus=no   — nothing talks to it over D-Bus; the NSS client uses
+#                        /run/avahi-daemon/socket directly, and avahi-resolve /
+#                        avahi-browse (D-Bus tools) are not used for verification.
+#   - use-ipv6=no      — the units are reached over IPv4 A records only.
+#   - publishing off   — MANDATORY. The compose service runs network_mode: host,
+#                        so this daemon shares the host's network namespace; a
+#                        second responder claiming names would collide with the
+#                        host's own mDNS stack. Never re-enable it.
+#   - reflector off    — the container must not relay other segments' mDNS traffic.
+RUN cat > /etc/avahi/avahi-daemon.conf <<'EOF'
+[server]
+enable-dbus=no
+use-ipv4=yes
+use-ipv6=no
+
+[publish]
+disable-publishing=yes
+disable-user-service-publishing=yes
+
+[reflector]
+enable-reflector=no
+EOF
+
+# NSS wiring for the resolver. The full mdns4 plugin (not mdns4_minimal) plus
+# /etc/mdns.allow listing `.local.` and `.local` makes `.local` authoritative
+# for the plugin — the _minimal variant first sends an SOA query for `local` to
+# the configured DNS server, adding latency and misbehaving when that server
+# does not answer NXDOMAIN. Anything outside the allow-list skips mdns4 and
+# falls through to dns.
+#
+# The `hosts:` line is rewritten UNCONDITIONALLY: relying on the package's
+# post-install to have inserted a particular spelling risks a silent no-op,
+# whose failure mode is the worst one here — resolver running, nothing resolves.
+# The final grep is a build-time assertion of the exact resulting line.
+RUN set -eux; \
+    printf '.local.\n.local\n' > /etc/mdns.allow; \
+    [ -f /etc/nsswitch.conf ] || : > /etc/nsswitch.conf; \
+    sed -i 's/^hosts:.*/hosts: files mdns4 [NOTFOUND=return] dns/' /etc/nsswitch.conf; \
+    grep -q '^hosts:' /etc/nsswitch.conf \
+        || printf 'hosts: files mdns4 [NOTFOUND=return] dns\n' >> /etc/nsswitch.conf; \
+    grep -Fqx 'hosts: files mdns4 [NOTFOUND=return] dns' /etc/nsswitch.conf
 
 # Production dependencies only (builds the better-sqlite3 native binding).
 COPY mushpi-server/package.json mushpi-server/yarn.lock mushpi-server/.yarnrc.yml ./
@@ -103,8 +160,11 @@ COPY --from=client-build /app/dist ./client
 # so it must ship in the runtime image or the assets 404.
 COPY --from=server-build /app/public ./public
 
-# Data-directory guard + privilege drop — the container starts as root, this
-# script creates /data and its images/logs subdirs, ensures node:node ownership,
+# Data-directory guard + container mDNS resolver start + privilege drop — the
+# container starts as root, this script creates /data and its images/logs
+# subdirs, ensures node:node ownership, starts the query-only resolver baked in
+# above (skipped with a warning when not root; a failed start is logged, never
+# fatal — the server boots and the announced-IP fallback carries the polls),
 # then drops to the `node` user with setpriv and execs the CMD. Fails loudly
 # (with an operator-readable remedy) if it runs unprivileged and /data is not
 # writable. See REFERENCE.md for the full behaviour.
@@ -122,8 +182,9 @@ RUN mkdir -p /data/logs /data/images \
 
 # No USER directive: the entrypoint drops root → node via setpriv before
 # exec'ing the server, so a root start can repair a daemon-created bind-mount
-# source dir. Consequence: `docker exec` into a running container defaults to
-# root, not `node`.
+# source dir and start the resolver. Consequence: `docker exec` into a running
+# container defaults to root, not `node` — pass `--user node` when checking
+# anything the server itself does, including `.local` resolution.
 EXPOSE 3000
 
 # Liveness probe (Node built-in fetch — no curl/wget in -slim). APP_SECRET is
@@ -131,5 +192,9 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3000/ping').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-ENTRYPOINT ["/usr/src/app/docker-entrypoint.sh"]
+# dumb-init is PID 1: it reaps the daemonized avahi resolver (which double-forks
+# out of the entrypoint's process and is reparented here) and forwards signals to
+# the entrypoint script — which `exec`s, so node stays in dumb-init's direct
+# line of succession rather than becoming an orphan.
+ENTRYPOINT ["/usr/bin/dumb-init", "--", "/usr/src/app/docker-entrypoint.sh"]
 CMD ["node", "dist/src/main.js"]

@@ -13,7 +13,7 @@ On-demand gotchas for editing this layer live in [`REFERENCE.md`](./REFERENCE.md
 | `.github/workflows/publish.yml` | CI: on push to `main` or a `v*` tag, checks out the sub-repos, runs the tag⇔manifest guard and the parity check, builds and pushes the image to GHCR via `./.github/actions/build-image` |
 | `.github/workflows/publish-dev.yml` | CI (manual `workflow_dispatch` only): dev/pre-release build of the same image with a required free-form `image_tag` plus an automatic `dev-sha-<short>` tag; skips the manifest guard and parity check; never moves `latest` |
 | `.github/actions/build-image/action.yml` | Composite action — the mechanical build/push (QEMU, Buildx, GHCR login, metadata, build-push) shared by both publish workflows; carries no trigger, guard or tag policy (see `REFERENCE.md`) |
-| `Dockerfile` | Three-stage build (client → server → runtime); build context = this repo's root |
+| `Dockerfile` | Three-stage build (client → server → runtime); the runtime stage carries the server's native-build toolchain plus the container's query-only mDNS resolver and its NSS client; build context = this repo's root |
 | `docker-compose.yml` | Compose service that pulls `ghcr.io/mushroom-pi/mushpi` (tag from `MUSHPI_IMAGE_TAG`, default `latest`); runs with `network_mode: host` (no published ports — the server binds host port 3000 directly and shares the host's network stack, which is what lets LAN multicast reach it); persists host dir `MUSHPI_DATA_DIR` (default `./mushpi-data`) at `/data` |
 | `docker-compose.override.yml` | Local build toggle — **untracked by design**, absent from clones |
 | `.dockerignore` | Build-context exclusions |
@@ -22,7 +22,7 @@ On-demand gotchas for editing this layer live in [`REFERENCE.md`](./REFERENCE.md
 | `.env.example` | Env template (`PICO_ANNOUNCE_SECRET` required; optional `MUSHPI_DATA_DIR`, `MUSHPI_IMAGE_TAG`, `APP_HTTPS_ENABLED`, the opt-in rate-limit pair `MAX_REQUESTS`/`MAX_REQUESTS_TIME`, and app overrides) |
 | `release.json` | Release manifest: `release`/`server`/`client`/`firmware` SemVer plus integer `api_version` |
 | `scripts/verify-release.sh` | Release-consistency check: tag⇔manifest, manifest⇔committed component versions, spec versions |
-| `scripts/docker-entrypoint.sh` | Container entrypoint (baked into the image): starts as root, creates `/data` plus its `images`/`logs` subdirs, ensures they are owned by `node:node`, drops privileges with `setpriv`, then `exec`s the CMD as the `node` user; fails loudly if run unprivileged and `/data` is not writable |
+| `scripts/docker-entrypoint.sh` | Container entrypoint (baked into the image, run under `dumb-init` as PID 1): starts as root, creates `/data` plus its `images`/`logs` subdirs, ensures they are owned by `node:node`, starts the container's own query-only mDNS resolver (skipped with a warning when not root, and non-fatal if it fails), drops privileges with `setpriv`, then `exec`s the CMD as the `node` user; fails loudly if run unprivileged and `/data` is not writable |
 | `DEPLOYMENT.md` | Release-repo notes plus a pointer to the published operator guide — the operator-facing procedures (provisioning, self-hosting, first boot, Pico setup, updates, backup, remote access) now live on the documentation site, `github.com/mushroom-pi/mushpi-docs`. Human register |
 | `MAINTAINING.md` | Maintainer guide — packaging and the release process (human register) |
 | `README.md` | Repo entry point for self-hosters, pointing at the published guide |
