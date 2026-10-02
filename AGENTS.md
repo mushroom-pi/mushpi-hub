@@ -14,7 +14,7 @@ On-demand gotchas for editing this layer live in [`REFERENCE.md`](./REFERENCE.md
 | `.github/workflows/publish-dev.yml` | CI (manual `workflow_dispatch` only): dev/pre-release build of the same image with a required free-form `image_tag` plus an automatic `dev-sha-<short>` tag; skips the manifest guard and parity check; never moves `latest` |
 | `.github/actions/build-image/action.yml` | Composite action — the mechanical build/push (QEMU, Buildx, GHCR login, metadata, build-push) shared by both publish workflows; carries no trigger, guard or tag policy (see `REFERENCE.md`) |
 | `Dockerfile` | Three-stage build (client → server → runtime); build context = this repo's root |
-| `docker-compose.yml` | Compose service that pulls `ghcr.io/mushroom-pi/mushpi` (tag from `MUSHPI_IMAGE_TAG`, default `latest`); persists host dir `MUSHPI_DATA_DIR` (default `./mushpi-data`) at `/data` |
+| `docker-compose.yml` | Compose service that pulls `ghcr.io/mushroom-pi/mushpi` (tag from `MUSHPI_IMAGE_TAG`, default `latest`); runs with `network_mode: host` (no published ports — the server binds host port 3000 directly and shares the host's network stack, which is what lets LAN multicast reach it); persists host dir `MUSHPI_DATA_DIR` (default `./mushpi-data`) at `/data` |
 | `docker-compose.override.yml` | Local build toggle — **untracked by design**, absent from clones |
 | `.dockerignore` | Build-context exclusions |
 | `.gitignore` | Ignore-all-then-allowlist; the tracked set is exactly the packaging layer |

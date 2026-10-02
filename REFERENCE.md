@@ -2,7 +2,7 @@
 
 Long-tail gotchas for the release/packaging layer. **Load only when the task touches these areas** — do not read on every spawn. The always-loaded [`AGENTS.md`](./AGENTS.md) holds the file map, the sibling-materialization model, verification commands, and core conventions.
 
-Topics covered here: build-context layout · Yarn Berry 4 / Corepack · `better-sqlite3` native build · client API regeneration + `tsc` gate · entrypoint & runtime details · rate limiting (`MAX_REQUESTS` / `MAX_REQUESTS_TIME`) · `release.json` in the build context · tag & CI semantics · dev / pre-release image builds · shared build action · local verify/build prerequisites · `docker-compose.override.yml` & local `.env`.
+Topics covered here: build-context layout · Yarn Berry 4 / Corepack · `better-sqlite3` native build · client API regeneration + `tsc` gate · entrypoint & runtime details · rate limiting (`MAX_REQUESTS` / `MAX_REQUESTS_TIME`) · `release.json` in the build context · tag & CI semantics · dev / pre-release image builds · shared build action · local verify/build prerequisites · host networking (`network_mode: host`) · `docker-compose.override.yml` & local `.env`.
 
 ---
 
@@ -110,3 +110,11 @@ Topics covered here: build-context layout · Yarn Berry 4 / Corepack · `better-
 - `docker-compose.override.yml` is untracked by design: it switches compose from pulling the published image to building locally. Self-hosters' clones never contain it.
 - Copy `.env.example` → `.env` before a local `docker compose up`. `.env` is gitignored and never committed.
 - **A local build can silently run a stale published image.** In build mode the image is tagged from the base file's `image:` field, so if `MUSHPI_IMAGE_TAG` names a tag already present locally (e.g. a pulled `0.9.0-alpha`), `docker compose up -d` skips the rebuild and starts the old image. Use a private tag for local verification (or force the rebuild) so you are testing the tree you built.
+
+## Host networking (`network_mode: host`)
+
+- The `mushpi` service runs on the **host network**, and there is deliberately **no `ports:` block — that absence is load-bearing.** Compose treats `ports:` together with `network_mode: host` as incompatible (current Compose v2 warns and discards the mapping; some versions error), so never "restore" the published port as a cleanup.
+- Why it is **required, not a preference**: the server reaches growing units at `http://<handle>.local:<port>`, and on Docker's default bridge that path is dead — the container cannot send or receive LAN multicast, so `.local` never resolves and only the announced-IP fallback carries the poll. Host networking is what puts the container on the LAN.
+- Consequence: the server binds the hub's port 3000 **directly on the host**. A host service already listening on 3000 collides at boot (previously the clash surfaced as a port-publish error). The image `HEALTHCHECK` is unaffected — under host networking the container's `127.0.0.1` is the host's loopback.
+- **No network isolation.** The container shares the host's entire network stack and can see every host interface and all of its traffic. Accepted for a single-purpose appliance; do not describe the trade-off as free.
+- Host networking is **Linux-only**; Docker Desktop for mac/Windows does not provide it, so the build-mode override does not behave the same there. The override's `build:` block still merges cleanly with `network_mode: host` and runs in the host namespace.
