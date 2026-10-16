@@ -8,7 +8,10 @@
 !REFERENCE.md
 !README.md
 !Dockerfile
+!Dockerfile.mock
+!Dockerfile.mock.dockerignore
 !docker-compose.yml
+!docker-compose.demo.yml
 !.dockerignore
 !.env.example
 !release.json
@@ -38,9 +41,14 @@ mushpi-server/
 mushpi-client/
 mushpi-grow/
 mushpi-mock/
-mushpi-docs/
 
 # Runtime data on machines that run the stack from this directory
 # (SQLite DB, uploaded images, logs). Also covered by the blanket `*`
 # ignore above — this explicit rule documents the default's intent.
 mushpi-data/
+
+# Demo-stack scratch: the generated mock config (embeds the announce secret)
+# and the demo's disposable data directory. Both sit under the blanket `*`
+# ignore anyway — these explicit rules document intent, like mushpi-data/.
+.demo-mock-config.json
+mushpi-demo-data/

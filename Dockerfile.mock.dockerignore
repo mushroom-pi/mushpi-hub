@@ -1,0 +1,69 @@
+# Per-Dockerfile ignore file — governs ONLY builds run with `-f Dockerfile.mock`
+# (BuildKit prefers `<dockerfile>.dockerignore` and then does NOT read the
+# shared `.dockerignore`). That is why this file exists: the shared file is
+# hub-shaped and excludes `mushpi-mock/` — the sole build input of this image.
+# It cannot stay hub-lean AND feed this build, so this build gets its own list.
+# Everything below is excluded from the context upload; the Dockerfile COPYs
+# only pyproject.toml, uv.lock, README.md, LICENSE and src/ from mushpi-mock/.
+
+# VCS
+.git
+**/.git
+
+# Sibling repos that are never inputs to THIS image (they may sit in the local
+# context as transient clones; per REFERENCE.md they are never vendored).
+mushpi-server
+mushpi-client
+mushpi-grow
+
+# Python scratch a local mushpi-mock clone carries — never build inputs.
+**/.venv
+**/__pycache__
+**/*.pyc
+.mypy_cache
+**/.mypy_cache
+.ruff_cache
+**/.ruff_cache
+
+# The mock clone's local runtime config — untracked, may hold a real secret.
+mushpi-mock/config.json
+
+# Secrets and live state — must never be baked into any image.
+.env
+.env.*
+**/.env
+.demo-mock-config.json
+data
+data-test
+mushpi-data
+mushpi-demo-data
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Packaging-layer files irrelevant to this build (root-level matches only).
+Dockerfile
+.dockerignore
+*.dockerignore
+docker-compose*.yml
+.github
+release.json
+README.md
+LICENSE
+AGENTS.md
+REFERENCE.md
+DEPLOYMENT.md
+MAINTAINING.md
+
+# Node leftovers — a maintainer's context can carry them; not baked here.
+**/node_modules
+dist
+**/dist
+coverage
+**/coverage
+
+# IDE / hooks
+.vscode
+.idea
+.husky

@@ -17,6 +17,15 @@ inputs:
   image_name:
     description: Image name within the registry (e.g. owner/mushpi)
     required: true
+  file:
+    description: >
+      Path to the Dockerfile within the build context. Defaults to ./Dockerfile
+      so the hub callers — which omit it entirely — build exactly as before; a
+      caller publishing a different image from the same context passes it
+      explicitly (e.g. ./Dockerfile.mock). Mechanical only: which file to
+      compile is not a ref or tag policy, and stays the caller's decision.
+    required: false
+    default: ./Dockerfile
   token:
     description: Registry login token — pass secrets.GITHUB_TOKEN from the caller
     required: true
@@ -60,7 +69,7 @@ runs:
       uses: docker/build-push-action@v7
       with:
         context: .
-        file: ./Dockerfile
+        file: ${{ inputs.file }}
         push: ${{ inputs.push == 'true' }}
         platforms: linux/amd64,linux/arm64
         build-args: |

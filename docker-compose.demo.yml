@@ -1,0 +1,141 @@
+# Demo stack — one command runs server + dashboard + five simulated Pico units.
+# Entry point: scripts/demo-stack.sh (validates the announce secret, generates
+# the mock's config, brings the stack up). Run this file explicitly with `-f`;
+# `docker compose` with an explicit `-f` does NOT auto-load docker-compose.yml
+# or docker-compose.override.yml, so the hub deployment is untouched by
+# anything here.
+#
+# The server boots its PUBLIC-DEMO profile (NODE_ENV=demo): every write on the
+# dashboard is refused with 403 except Pico announce, and the three rate
+# limiters are always armed — the server refuses to boot without all six
+# DEMO_* values and without a real PICO_ANNOUNCE_SECRET (the published dev
+# default is rejected). Defaults below; overridable in .env or the ambient
+# environment.
+#
+# State lives in MUSHPI_DEMO_DATA_DIR (default ./mushpi-demo-data, gitignored),
+# bind-mounted at /data into BOTH containers: the server creates and owns
+# app.sqlite/uploads/logs; the mock seeds app.sqlite directly (`--seed-days`,
+# inserts readings rows only — it never deletes). Wiping the demo is
+# `down` + deleting that disposable directory; it is never the hub's data dir.
+#
+# Why a fixed-subnet bridge instead of the hub's `network_mode: host`: the
+# demo targets laptops (Docker Desktop has no host networking). mDNS multicast
+# is dead on a Docker bridge, so the units announce the mock container's FIXED
+# bridge IP and the server polls it back — the announced-IP path is the design,
+# not a fallback to apologise for.
+#
+# Published ports bind loopback (127.0.0.1) by default — nothing reaches the
+# LAN through this packaging unless MUSHPI_DEMO_HOST is overridden.
+
+services:
+  mushpi:
+    # The same published image the hub pulls. No `build:` here — the demo
+    # path mirrors the pull-only deployment by design.
+    image: ghcr.io/mushroom-pi/mushpi:${MUSHPI_IMAGE_TAG:-latest}
+
+    restart: unless-stopped
+
+    ports:
+      - "${MUSHPI_DEMO_HOST:-127.0.0.1}:${MUSHPI_DEMO_PORT:-3000}:3000"
+
+    environment:
+      NODE_ENV: demo
+      # Compose resolves `${...}` from `.env` AND the ambient process
+      # environment, so a laptop run (secret in `.env`) behaves exactly as it
+      # did with `env_file:`, while a hosted deployment can inject the secret
+      # straight from its environment. Dropping `env_file:` is deliberate: the
+      # demo container no longer inherits every unrelated hub key from `.env`
+      # (rate-limit pair, docs auth, …). Required: the demo profile refuses to
+      # boot without it, and rejects the published dev default.
+      PICO_ANNOUNCE_SECRET: ${PICO_ANNOUNCE_SECRET:-}
+      # In-container layout — the same fixed absolute paths as the hub compose;
+      # SQLITE_PATH matters twice here: the server's DB and the mock's seed
+      # target must be the same file inside the shared /data mount.
+      PORT: "3000"
+      SQLITE_PATH: /data/app.sqlite
+      UPLOAD_DIR: /data
+      LOGS_PATH: /data/logs
+      # Same-origin dashboard; the CORS origin value is optional on a demo
+      # boot but kept valid (Joi requires a URI whenever present). Default
+      # tracks the demo's own port binding.
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:${MUSHPI_DEMO_PORT:-3000}}
+      APP_HTTPS_ENABLED: ${APP_HTTPS_ENABLED:-false}
+
+      # Public-demo limiters — REQUIRED by the demo boot (values come from the
+      # deployment, never hard-coded in the product). Windows in milliseconds.
+      # Sized for a demo; every one overridable via .env.
+      # Caveat: the per-visitor buckets key on the client IP (X-Forwarded-For
+      # only with a fronting proxy) — on a plain laptop run every visitor
+      # shares the gateway's single bucket. See .env.example §demo stack.
+      DEMO_VISITOR_MAX_REQUESTS: ${DEMO_VISITOR_MAX_REQUESTS:-300}
+      DEMO_VISITOR_MAX_REQUESTS_TIME: ${DEMO_VISITOR_MAX_REQUESTS_TIME:-60000}
+      DEMO_ABUSE_MAX_REQUESTS: ${DEMO_ABUSE_MAX_REQUESTS:-30}
+      DEMO_ABUSE_MAX_REQUESTS_TIME: ${DEMO_ABUSE_MAX_REQUESTS_TIME:-60000}
+      DEMO_GLOBAL_MAX_REQUESTS: ${DEMO_GLOBAL_MAX_REQUESTS:-3000}
+      DEMO_GLOBAL_MAX_REQUESTS_TIME: ${DEMO_GLOBAL_MAX_REQUESTS_TIME:-60000}
+
+    volumes:
+      - "${MUSHPI_DEMO_DATA_DIR:-./mushpi-demo-data}:/data"
+
+    networks:
+      - mushpi-demo
+
+  mock:
+    image: ghcr.io/mushroom-pi/mushpi-mock:${MUSHPI_MOCK_IMAGE_TAG:-latest}
+    # A laptop that materialized the transient `mushpi-mock/` sibling clone
+    # (recipe: REFERENCE.md) builds when the tag is absent locally; a hosted
+    # demo keeps pulling — compose builds only a missing image. Stale-tag
+    # caveat: if MUSHPI_MOCK_IMAGE_TAG names a tag already present locally,
+    # `up` starts it WITHOUT rebuilding (same trap REFERENCE.md records for
+    # the hub override) — `pull` or use a fresh tag to force the newer image.
+    build:
+      context: .
+      dockerfile: Dockerfile.mock
+
+    restart: unless-stopped
+
+    # Config is not baked: scripts/demo-stack.sh generates .demo-mock-config.json
+    # (gitignored — it embeds the announce secret) and it mounts read-only.
+    # Five units on 5000-5004; DEMO_SEED_DAYS backdates the reading history for
+    # the charts (0 disables seeding).
+    command:
+      - start
+      - --config
+      - /app/config.json
+      - --seed-days
+      - "${DEMO_SEED_DAYS:-15}"
+
+    volumes:
+      - ./.demo-mock-config.json:/app/config.json:ro
+      - "${MUSHPI_DEMO_DATA_DIR:-./mushpi-demo-data}:/data"
+
+    # Fixed address so the announced IP and the server's poll target are
+    # stable across restarts — keep in sync with scripts/demo-stack.sh, which
+    # bakes this exact IP into the generated config as `announce_ip`.
+    networks:
+      mushpi-demo:
+        ipv4_address: 172.28.0.10
+
+    # Loopback-only debugging of the simulated units (GET /, GET /ui) from the
+    # laptop; the server reaches the units over the bridge, not via these.
+    ports:
+      - "127.0.0.1:5000-5004:5000-5004"
+
+    # The units need a live server: announce (which yields the unit IDs the
+    # seed rows attach to) fails until the API answers, and the seed target
+    # /data/app.sqlite exists only after the server booted. The HEALTHCHECK
+    # rides in the published image itself.
+    depends_on:
+      mushpi:
+        condition: service_healthy
+
+networks:
+  mushpi-demo:
+    # Fixed name (no project prefix) so repeated `up`/`down` of the demo are
+    # idempotent regardless of where the repo is checked out.
+    name: mushpi-demo
+    ipam:
+      config:
+        # Fixed /24 so the mock's hardcoded 172.28.0.10 is always in range
+        # and the bridge never drifts onto a subnet the host already routes.
+        - subnet: 172.28.0.0/24
