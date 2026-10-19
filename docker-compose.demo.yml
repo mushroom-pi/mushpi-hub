@@ -8,9 +8,9 @@
 # The server boots its PUBLIC-DEMO profile (NODE_ENV=demo): every write on the
 # dashboard is refused with 403 except Pico announce, and the three rate
 # limiters are always armed — the server refuses to boot without all six
-# DEMO_* values and without a real PICO_ANNOUNCE_SECRET (the published dev
-# default is rejected). Defaults below; overridable in .env or the ambient
-# environment.
+# VISITOR_*/ABUSE_*/GLOBAL_* values and without a real PICO_ANNOUNCE_SECRET
+# (the published dev default is rejected). Defaults below; overridable in
+# .env or the ambient environment.
 #
 # State lives in MUSHPI_DEMO_DATA_DIR (default ./mushpi-demo-data, gitignored),
 # bind-mounted at /data into BOTH containers: the server creates and owns
@@ -67,12 +67,12 @@ services:
       # Caveat: the per-visitor buckets key on the client IP (X-Forwarded-For
       # only with a fronting proxy) — on a plain laptop run every visitor
       # shares the gateway's single bucket. See .env.example §demo stack.
-      DEMO_VISITOR_MAX_REQUESTS: ${DEMO_VISITOR_MAX_REQUESTS:-300}
-      DEMO_VISITOR_MAX_REQUESTS_TIME: ${DEMO_VISITOR_MAX_REQUESTS_TIME:-60000}
-      DEMO_ABUSE_MAX_REQUESTS: ${DEMO_ABUSE_MAX_REQUESTS:-30}
-      DEMO_ABUSE_MAX_REQUESTS_TIME: ${DEMO_ABUSE_MAX_REQUESTS_TIME:-60000}
-      DEMO_GLOBAL_MAX_REQUESTS: ${DEMO_GLOBAL_MAX_REQUESTS:-3000}
-      DEMO_GLOBAL_MAX_REQUESTS_TIME: ${DEMO_GLOBAL_MAX_REQUESTS_TIME:-60000}
+      VISITOR_MAX_REQUESTS: ${VISITOR_MAX_REQUESTS:-300}
+      VISITOR_MAX_REQUESTS_TIME: ${VISITOR_MAX_REQUESTS_TIME:-60000}
+      ABUSE_MAX_REQUESTS: ${ABUSE_MAX_REQUESTS:-30}
+      ABUSE_MAX_REQUESTS_TIME: ${ABUSE_MAX_REQUESTS_TIME:-60000}
+      GLOBAL_MAX_REQUESTS: ${GLOBAL_MAX_REQUESTS:-3000}
+      GLOBAL_MAX_REQUESTS_TIME: ${GLOBAL_MAX_REQUESTS_TIME:-60000}
 
     volumes:
       - "${MUSHPI_DEMO_DATA_DIR:-./mushpi-demo-data}:/data"
