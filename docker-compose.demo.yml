@@ -14,8 +14,9 @@
 #
 # State lives in MUSHPI_DEMO_DATA_DIR (default ./mushpi-demo-data, gitignored),
 # bind-mounted at /data into BOTH containers: the server creates and owns
-# app.sqlite/uploads/logs; the mock seeds app.sqlite directly (`--seed-days`,
-# inserts readings rows only — it never deletes). Wiping the demo is
+# app.sqlite/uploads/logs, and the SERVER seeds the demo's reading history into
+# app.sqlite on boot (insert-only, idempotent per unit — it never deletes). The
+# mock only simulates units; it writes no history. Wiping the demo is
 # `down` + deleting that disposable directory; it is never the hub's data dir.
 #
 # Why a fixed-subnet bridge instead of the hub's `network_mode: host`: the
@@ -49,8 +50,10 @@ services:
       # boot without it, and rejects the published dev default.
       PICO_ANNOUNCE_SECRET: ${PICO_ANNOUNCE_SECRET:-}
       # In-container layout — the same fixed absolute paths as the hub compose;
-      # SQLITE_PATH matters twice here: the server's DB and the mock's seed
-      # target must be the same file inside the shared /data mount.
+      # SQLITE_PATH is the server's own database file, and it is where the
+      # demo's reading history lands, because the SERVER seeds it on boot
+      # (insert-only, idempotent per unit). The mock shares the /data mount for
+      # its own state but no longer seeds anything into it.
       PORT: "3000"
       SQLITE_PATH: /data/app.sqlite
       UPLOAD_DIR: /data
@@ -60,6 +63,16 @@ services:
       # tracks the demo's own port binding.
       CLIENT_URL: ${CLIENT_URL:-http://localhost:${MUSHPI_DEMO_PORT:-3000}}
       APP_HTTPS_ENABLED: ${APP_HTTPS_ENABLED:-false}
+      # Demo seeding is the SERVER's job (SeedService on boot: recipes → units
+      # → batches → readings, insert-only and idempotent per unit via a
+      # watermark). Both knobs are passed through so an operator can retune or
+      # disable the seeded history without rebuilding anything; SEED_ENABLED
+      # defaults to on for a NODE_ENV=demo boot and SEED_READINGS_DAYS has its
+      # own server-side default (14) — the 15 below pins the demo's depth
+      # deliberately. `0` and fractional day values are boot validation errors:
+      # to disable seeding, set SEED_ENABLED=false, not SEED_READINGS_DAYS=0.
+      SEED_ENABLED: "${SEED_ENABLED:-true}"
+      SEED_READINGS_DAYS: "${SEED_READINGS_DAYS:-15}"
 
       # Public-demo limiters — REQUIRED by the demo boot (values come from the
       # deployment, never hard-coded in the product). Windows in milliseconds.
@@ -96,14 +109,14 @@ services:
 
     # Config is not baked: scripts/demo-stack.sh generates .demo-mock-config.json
     # (gitignored — it embeds the announce secret) and it mounts read-only.
-    # Five units on 5000-5004; DEMO_SEED_DAYS backdates the reading history for
-    # the charts (0 disables seeding).
+    # Five units on 5000-5004. This container does NOT seed: the reading history
+    # is the server's own demo seeding (SEED_ENABLED / SEED_READINGS_DAYS on the
+    # mushpi service above).
+    # Mock handles: 5000=tent-one, 5001=tent-two, 5002=tent-three (drift), 5003=tent-four, 5004=tent-five; tent-six is offline and not mocked. The server seeds history for these handles itself.
     command:
       - start
       - --config
       - /app/config.json
-      - --seed-days
-      - "${DEMO_SEED_DAYS:-15}"
 
     volumes:
       - ./.demo-mock-config.json:/app/config.json:ro
@@ -121,9 +134,11 @@ services:
     ports:
       - "127.0.0.1:5000-5004:5000-5004"
 
-    # The units need a live server: announce (which yields the unit IDs the
-    # seed rows attach to) fails until the API answers, and the seed target
-    # /data/app.sqlite exists only after the server booted. The HEALTHCHECK
+    # The units need a live server: announce upserts onto the server-seeded
+    # roster by handle, so it fails until the API answers. The demo's own data
+    # (units, batches, reading history) is written by the SERVER during its
+    # boot — an awaited onApplicationBootstrap hook, so it is complete before
+    # the healthcheck this condition waits on can pass. The HEALTHCHECK
     # rides in the published image itself.
     depends_on:
       mushpi:

@@ -13,11 +13,13 @@
 #
 # What it does: sources `.env` if present (optional — see below), validates
 # the announce secret against the server's public-demo rules, generates
-# .demo-mock-config.json for the mock container, ensures the demo data
+# .demo-mock-config.json for the mock container (five units on the
+# server-seeded handles tent-one … tent-five), ensures the demo data
 # directory exists, then brings the stack up with
 # `docker compose -f docker-compose.demo.yml up "$@"`. On the detached path
-# (`-d`) it additionally verifies the mock's seed actually landed
-# (verify_demo_seed) before reporting success.
+# (`-d`) it additionally verifies the demo profile actually came up as designed
+# (verify_demo_seed — seeded reading depth, the six-unit roster, and batch
+# placement) before reporting success.
 #
 # Environment supply is decoupled from `.env`: PICO_ANNOUNCE_SECRET may come
 # from a local `.env` (the laptop convention) OR from the ambient environment
@@ -75,6 +77,13 @@ mkdir -p "$DATA_DIR"
 #   - /data/app.sqlite matches the server's SQLITE_PATH inside the shared mount;
 #   - five units on 5000-5004, matching the loopback port range compose publishes.
 #
+# The handles are the server-seeded demo roster (tent-one … tent-five), NOT a
+# mock-namespaced set: announcing an already-seeded handle makes the server's
+# upsert-by-handle land on that unit, so the mock drives the roster the
+# dashboard shows instead of adding a parallel row per unit. `tent-six` is
+# deliberately absent — it is the roster's offline unit, and a mock that
+# announced it would make it reachable.
+#
 # The path below is hardcoded at the repo root because docker-compose.demo.yml
 # mounts exactly that location (`./.demo-mock-config.json:/app/config.json:ro`).
 # Where a containerised run of this script should write it is a
@@ -89,58 +98,101 @@ cat > .demo-mock-config.json <<EOF
   "announce_ip": "${MOCK_IP}",
   "db_path": "/data/app.sqlite",
   "units": [
-    { "handle": "mock-tent-1", "port": 5000 },
-    { "handle": "mock-tent-2", "port": 5001 },
-    { "handle": "mock-tent-3", "port": 5002 },
-    { "handle": "mock-tent-4", "port": 5003 },
-    { "handle": "mock-tent-5", "port": 5004 }
+    { "handle": "tent-one", "port": 5000 },
+    { "handle": "tent-two", "port": 5001 },
+    { "handle": "tent-three", "port": 5002 },
+    { "handle": "tent-four", "port": 5003 },
+    { "handle": "tent-five", "port": 5004 }
   ]
 }
 EOF
 # Embeds the announce secret — owner-readable only, and gitignored.
 chmod 600 .demo-mock-config.json
 
-# Seed bookkeeping shared by the verifier and the foreground guidance. The
-# default mirrors docker-compose.demo.yml's `${DEMO_SEED_DAYS:-15}` — keep the
-# two in sync. 1440 = one reading per minute per unit.
-SEED_DAYS="${DEMO_SEED_DAYS:-15}"
-SEED_EXPECTED=$(( SEED_DAYS * 1440 ))
+# Seed bookkeeping shared by the verifier and the foreground guidance. Both
+# values are the SERVER's demo-seeding knobs (the mock does not seed): the
+# defaults mirror the `environment:` entries passed to mushpi in
+# docker-compose.demo.yml — same variable NAMES, so one `.env` line retunes the
+# container and the verifier together and the two cannot drift. 1440 = one
+# reading per minute per unit. SEED_READINGS_DAYS has a server-side default of
+# 14; compose pins 15 here and the demo's depth is expressed by that pin. The
+# server refuses 0 and fractional day values at boot, so disabling seeding is
+# SEED_ENABLED=false, never a day count of 0.
+SEED_ENABLED="${SEED_ENABLED:-true}"
+SEED_READINGS_DAYS="${SEED_READINGS_DAYS:-15}"
+SEED_EXPECTED=$(( SEED_READINGS_DAYS * 1440 ))
 
 # The verification query as ONE js line, run by the mushpi container's own node
 # against the image's own better-sqlite3 — no host-side sqlite3/jq dependency
 # (`exec -T` makes it usable non-interactively). Identifiers (pico_unit,
-# readings, pico_unit_id, handle) are confirmed against the server entities,
-# its InitSchema migration, and an empirically synchronized database. The DB
-# opens READ-ONLY ({readonly:true}): a verifier must never mutate demo state,
-# and a missing file simply throws — the retry loop treats a failed exec as
-# "not ready yet". node applies the threshold itself and exits 0/1, so bash
-# only decides "still polling" vs "done". /data/app.sqlite is the server's
-# SQLITE_PATH in docker-compose.demo.yml — keep the two in sync.
-SEED_JS='const Database=require("better-sqlite3");const db=new Database("/data/app.sqlite",{readonly:true});const want=["mock-tent-1","mock-tent-2","mock-tent-3","mock-tent-4","mock-tent-5"];const counts={};for(const r of db.prepare("SELECT u.handle AS handle, COUNT(r.id) AS n FROM pico_unit u LEFT JOIN readings r ON r.pico_unit_id = u.id GROUP BY u.handle").all())counts[r.handle]=r.n;db.close();const expected='"$SEED_EXPECTED"';for(const h of want)console.log(h+"="+(counts[h]||0));process.exit(want.every(h=>(counts[h]||0)>=expected)?0:1);'
+# readings, batch, pico_unit_id, handle, start_at, finish_at) are confirmed
+# against the server entities, its InitSchema migration, and an empirically
+# synchronized database. The DB opens READ-ONLY ({readonly:true}): a verifier
+# must never mutate demo state, and a missing file simply throws — the retry
+# loop treats a failed exec as "not ready yet". node applies the thresholds
+# itself and exits 0/1, so bash only decides "still polling" vs "done".
+# /data/app.sqlite is the server's SQLITE_PATH in docker-compose.demo.yml —
+# keep the two in sync.
+#
+# Three assertions, all read-only, all against the server-seeded demo roster:
+#   1. seed depth — every mocked handle (tent-one … tent-five) holds EXACTLY
+#      seed_readings_days x 1440 readings *inside the seeded window*: rows from
+#      cutoff = the last whole minute at or before now-60s (the same expression
+#      the server used to freeze its boundary, computeSeedEndTs) backwards
+#      across (expected-1) minutes, inclusive at both ends. The window is what
+#      makes an exact count usable at all — a whole-table equality would flake
+#      on the 60s poll's later rows. CAVEAT, unverified against a live stack:
+#      the server freezes its boundary at boot, while this cutoff is recomputed
+#      each attempt, so once the verifier runs in a LATER minute than the seed
+#      boundary the window slides off the oldest seeded rows and may collect
+#      poll rows instead (the boot-time startup sweep writes one at an unaligned
+#      second). When that happens the count lands off `expected` by a row or two
+#      and a healthy seed reports FAILED — read the printed window against
+#      `Demo seeding start — boundary …` in the mushpi logs before trusting it.
+#   2. roster — pico_unit holds EXACTLY the six seeded handles. This is what
+#      catches a mock announcing a handle the server never seeded (a rename
+#      that only moved one side of the contract shows up here as a seventh
+#      row, not as a missing one); a doubled reading history is what assertion
+#      1's exact count catches, since overlay rows land inside the same window.
+#   3. batch placement — in-progress batches sit on exactly the four live
+#      units the demo seeds them on (tent-five's batch is planned, tent-six
+#      gets none), so the dashboard's unit cards and batch views agree with
+#      the roster.
+# Batch "in progress" mirrors Batch.status: null-or-future finish_at with a
+# start_at already past. TypeORM's SQLite driver writes datetimes as UTC
+# `YYYY-MM-DD HH:MM:SS.mmm` (DateUtils.mixedDateToUtcDatetimeString), a fixed
+# width string, so lexicographic comparison against the same shape is exact —
+# no julianday() parsing or timezone interpretation needed.
+SEED_JS='const Database=require("better-sqlite3");const db=new Database("/data/app.sqlite",{readonly:true});const want=["tent-one","tent-two","tent-three","tent-four","tent-five"];const roster=want.concat(["tent-six"]);const live=["tent-one","tent-two","tent-three","tent-four"];const slotMs=60000;const expected=Number('"$SEED_EXPECTED"');const fmt=d=>d.toISOString().replace("T"," ").slice(0,23);const cut=new Date(Math.floor((Date.now()-slotMs)/slotMs)*slotMs);const cutoff=fmt(cut);const windowStart=fmt(new Date(cut.getTime()-(expected-1)*slotMs));const nowStr=fmt(new Date());const handles=db.prepare("SELECT handle AS handle FROM pico_unit").all().map(r=>r.handle);const seedStmt=db.prepare("SELECT COUNT(r.id) AS n FROM readings r JOIN pico_unit u ON u.id = r.pico_unit_id WHERE u.handle = ? AND r.ts >= ? AND r.ts <= ?");const seeded={};for(const h of want)seeded[h]=seedStmt.get(h,windowStart,cutoff).n;const batched=db.prepare("SELECT DISTINCT u.handle AS handle FROM batch b JOIN pico_unit u ON u.id = b.pico_unit_id WHERE b.start_at <= ? AND (b.finish_at IS NULL OR b.finish_at > ?)").all(nowStr,nowStr).map(r=>r.handle);db.close();const seedOk=want.every(h=>seeded[h]===expected);const rosterOk=handles.length===roster.length&&roster.every(h=>handles.indexOf(h)>=0);const batchOk=batched.length===live.length&&live.every(h=>batched.indexOf(h)>=0)&&batched.indexOf("tent-six")<0;for(const h of want)console.log(h+"="+seeded[h]);console.log("window="+windowStart+".."+cutoff);console.log("roster="+handles.sort().join(","));console.log("in-progress-batches="+batched.sort().join(","));if(seedOk===false)console.log("FAILED seed: expected exactly "+expected+" seeded readings per unit inside the window "+windowStart+" .. "+cutoff+" (rows beyond it belong to the live poll, not to seeding)");if(rosterOk===false)console.log("FAILED roster: pico_unit must hold exactly "+roster.join(", ")+" but holds "+handles.sort().join(", ")+" — leftover rows from an older demo profile are not removed by an upsert, so wipe the demo data directory (down, then delete the disposable MUSHPI_DEMO_DATA_DIR) for a clean roster");if(batchOk===false)console.log("FAILED batch placement: expected in-progress batches on exactly "+live.join(", ")+" (tent-five is planned-only, tent-six has none) but found "+batched.sort().join(","));process.exit(seedOk&&rosterOk&&batchOk?0:1);'
 
-echo "demo-stack: dashboard will be at http://localhost:${MUSHPI_DEMO_PORT:-3000} once the server is healthy; the five units then announce and seed ${SEED_DAYS} day(s) of history (DEMO_SEED_DAYS=0 skips seeding)."
+echo "demo-stack: dashboard will be at http://localhost:${MUSHPI_DEMO_PORT:-3000} once the server is healthy; the SERVER seeds ${SEED_READINGS_DAYS} day(s) of history for the live roster on boot (SEED_ENABLED=false disables seeding), and the five units (tent-one … tent-five) announce onto it."
 
 # ---------------------------------------------------------------------------
 # verify_demo_seed — a silently-failing seed must not look like success.
-# The mock writes the seed rows itself and nothing else checks them: if the
-# seed step dies (SQLite contention with the server, a late announce, a mock
-# crash after `up -d` reported the stack started), the dashboard comes up
-# with empty charts and the script would exit 0 as if all is well. This polls
-# via SEED_JS (above) inside the running mushpi container until all five
-# mock-tent-* units hold at least seed_days x 1440 readings (one per minute),
-# or ~30s elapse — then fails loudly with the per-unit counts so the script's
-# exit code carries the verdict. Runs only on the detached path: the
+# The server seeds the demo history itself during boot (SeedService, insert-
+# only) and nothing else checks that it landed: if seeding comes up short —
+# SQLite contention between the seed writes and the 60s poll's writes, a
+# profile misconfiguration, or a volume left over from an older demo roster —
+# the dashboard comes up with empty or wrong charts and the script would exit
+# 0 as if all is well. This polls via SEED_JS (above) inside the running
+# mushpi container until the three demo-profile assertions hold — every
+# mocked handle (tent-one … tent-five) carries EXACTLY SEED_READINGS_DAYS x
+# 1440 readings (one per minute) inside the seeded window, the pico_unit
+# roster is exactly the six seeded handles, and in-progress batches sit on the
+# four live units the demo seeds them on — or ~30s elapse; then fails loudly
+# with the per-unit counts and the failed assertion so the script's exit code
+# carries the verdict. Runs only on the detached path: the
 # foreground path execs compose and never regains control.
 verify_demo_seed() {
-  if [ "$SEED_DAYS" = "0" ]; then
-    echo "demo-stack: DEMO_SEED_DAYS=0 — seeding disabled, seed verification skipped."
+  if [ "$SEED_ENABLED" = "false" ]; then
+    echo "demo-stack: SEED_ENABLED=false — seeding disabled, seed verification skipped."
     return 0
   fi
-  echo "demo-stack: verifying the seed — expecting >= ${SEED_EXPECTED} readings per unit (${SEED_DAYS} day(s) x 1440/min) ..."
+  echo "demo-stack: verifying the demo seed — expecting exactly ${SEED_EXPECTED} readings per unit (${SEED_READINGS_DAYS} day(s) x 1440/min) inside the seeded window, the six-unit seeded roster, and in-progress batches on tent-one … tent-four ..."
   local deadline=$(( $(date +%s) + 30 )) out=''
   while :; do
     if out=$(docker compose -f docker-compose.demo.yml exec -T mushpi node -e "$SEED_JS" 2>&1); then
-      echo "demo-stack: seed VERIFIED — every one of the five units carries >= ${SEED_EXPECTED} readings:"
+      echo "demo-stack: seed VERIFIED — readings seeded, roster and batch placement match the demo profile:"
       printf '%s\n' "$out" | sed 's/^/  /'
       return 0
     fi
@@ -150,10 +202,10 @@ verify_demo_seed() {
     sleep 2
   done
 
-  echo "demo-stack: SEED VERIFICATION FAILED — expected >= ${SEED_EXPECTED} readings per unit within 30s; last observed (per-unit counts, or the error that replaced them):" >&2
+  echo "demo-stack: SEED VERIFICATION FAILED — expected exactly ${SEED_EXPECTED} readings per unit inside the seeded window plus the seeded roster and batch placement within 30s; last observed (per-unit counts, roster, batch placement, or the error that replaced them):" >&2
   printf '%s\n' "$out" | sed 's/^/  /' >&2
-  echo "demo-stack: the seeder lives in the mock container — inspect it with: docker compose -f docker-compose.demo.yml logs mock" >&2
-  echo "demo-stack: a \"database is locked\" line in those logs means the mock and the server contended for SQLite — the server does not enable WAL, so seed writes fail instead of queueing." >&2
+  echo "demo-stack: the seeder is the server itself — inspect it with: docker compose -f docker-compose.demo.yml logs mushpi" >&2
+  echo "demo-stack: a \"database is locked\" line in those logs means the server's boot-time TypeORM seeding contended with the 60s poll's writes on the same SQLite file — the server runs without WAL, so such writes fail instead of queueing." >&2
   return 1
 }
 
@@ -181,8 +233,8 @@ else
   # shell), so print the verifier's own command — pasteable as-is — for a
   # human to run from another shell once the stack is up. Inner double
   # quotes are shell-escaped so the pasted argument survives parsing.
-  if [ "$SEED_DAYS" != "0" ]; then
-    echo "demo-stack: foreground mode — once the stack is up, verify the seed from another shell (expect >= ${SEED_EXPECTED} readings per unit; the command exits 0 when seeded):"
+  if [ "$SEED_ENABLED" != "false" ]; then
+    echo "demo-stack: foreground mode — once the stack is up, verify the demo profile from another shell (expect exactly ${SEED_EXPECTED} readings per unit inside the seeded window, the six-unit seeded roster, and in-progress batches on tent-one … tent-four; the command exits 0 when all three hold):"
     echo "  docker compose -f docker-compose.demo.yml exec -T mushpi node -e \"${SEED_JS//\"/\\\"}\""
   fi
   exec docker compose -f docker-compose.demo.yml up "$@"

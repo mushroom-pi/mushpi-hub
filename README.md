@@ -32,7 +32,7 @@ cp .env.example .env        # set PICO_ANNOUNCE_SECRET: openssl rand -hex 32
 bash scripts/demo-stack.sh
 ```
 
-Open `http://localhost:3000` (or `MUSHPI_DEMO_PORT`) — no login. The five units — `mock-tent-1` … `mock-tent-5` — announce themselves to the server on startup and behave like real units, and 15 days of backdated readings are pre-seeded on startup so the charts have data immediately (`DEMO_SEED_DAYS=0` skips seeding; another number changes the depth).
+Open `http://localhost:3000` (or `MUSHPI_DEMO_PORT`) — no login. The five units — `tent-one` … `tent-five` — announce themselves to the server on startup and behave like real units (the roster's sixth, `tent-six`, is seeded offline and deliberately has no mock), and the server seeds 15 days of backdated readings on boot so the charts have data immediately (`SEED_READINGS_DAYS` sets the depth; `0` is a boot validation error — disable seeding with `SEED_ENABLED=false`).
 
 `bash scripts/demo-stack.sh -d` runs detached; on that path the script also verifies the seeded history actually landed before it reports success, exiting non-zero with guidance if it did not. The announce secret can come from `.env` (the laptop path above) or from the environment — exporting `PICO_ANNOUNCE_SECRET` works equally well, so a hosted deployment can inject it platform-side; a `.env` file is not required. The demo runs from its own compose file, `docker-compose.demo.yml`, keeps its throwaway state in `./mushpi-demo-data` (override with `MUSHPI_DEMO_DATA_DIR`), and never touches a real installation's `./mushpi-data`. One prerequisite: it needs a `mushpi` image built with the demo profile.
 
