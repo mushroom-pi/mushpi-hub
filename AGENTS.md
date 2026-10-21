@@ -25,7 +25,7 @@ On-demand gotchas for editing this layer live in [`REFERENCE.md`](./REFERENCE.md
 | `release.json` | Release manifest: `release`/`server`/`client`/`firmware` SemVer plus integer `api_version` |
 | `scripts/verify-release.sh` | Release-consistency check: tag⇔manifest, manifest⇔committed component versions, spec versions |
 | `scripts/docker-entrypoint.sh` | Container entrypoint — root start, `/data` ownership fix, mDNS resolver start, then privilege drop; detail in `REFERENCE.md` |
-| `scripts/demo-stack.sh` | The demo stack's single entry point — resolves the announce secret (file or environment), generates the mock config, runs `docker compose … up`, and verifies the seeded history **plus the six-unit roster and in-progress batch placement** on the detached path |
+| `scripts/demo-stack.sh` | The demo stack's single entry point — resolves the announce secret (file or environment), generates the mock config, runs `docker compose … up`, and on the detached path verifies the seeded history (data-anchored per-unit window) **plus the six-unit roster and in-progress batch placement**, then the five mocked units' announce/poll identity |
 | `DEPLOYMENT.md` | Release-repo notes plus a pointer to the published operator guide (the operator-facing procedures now live on the documentation site, `github.com/mushroom-pi/mushpi-docs`). Human register |
 | `MAINTAINING.md` | Maintainer guide — packaging and the release process (human register) |
 | `README.md` | Repo entry point for self-hosters, pointing at the published guide |
