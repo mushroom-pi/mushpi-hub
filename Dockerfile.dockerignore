@@ -1,0 +1,86 @@
+# Per-Dockerfile ignore file — governs builds run with `-f Dockerfile` (the hub
+# image). BuildKit prefers `<dockerfile>.dockerignore` and then does NOT read the
+# shared `.dockerignore`, so this file is the *entire* ignore set for that build
+# and both lists must be kept in step (see REFERENCE.md §Build-context layout).
+# It has to cover two context roots with one file:
+#   - this repo's root — CI, release builds and the hub compose override, where
+#     the patterns below are exactly `.dockerignore`'s, so those builds are
+#     unchanged by this file existing;
+#   - the parent workspace directory — the local demo stack
+#     (scripts/demo-stack-local.sh), where this repo is a subdirectory and the
+#     siblings are the developer's own working copies. The final block holds the
+#     nested forms that only matter there, and matches nothing in a CI checkout.
+# Everything below is excluded from the context upload; nothing a `COPY` in the
+# Dockerfile reads may match — `mushpi-server/` and `mushpi-client/` are build
+# inputs and must NEVER be listed.
+
+# VCS
+.git
+**/.git
+
+# Dependencies + build output — rebuilt inside the image
+node_modules
+**/node_modules
+dist
+**/dist
+coverage
+**/coverage
+.yarn/cache
+**/.yarn/cache
+.yarn/install-state.gz
+
+# Runtime data — must never be baked into the image
+data
+mushpi-data
+data-test
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Secrets
+.env
+.env.prod
+.env.local
+**/.env
+**/.env.prod
+**/.env.local
+
+# Build tooling not needed in the context
+Dockerfile
+docker-compose.yml
+docker-compose*.yml
+.dockerignore
+README.md
+
+# Sub-repos that are never build inputs (keep the context lean).
+# NOTE: mushpi-server and mushpi-client are the build inputs — the Dockerfile
+# COPYs from both — and must NEVER be listed in this file.
+# mushpi-grow / mushpi-mock DO land in this root — checked out on v* tag builds
+# (the verify-release.sh parity check) and by the local verify recipe — but they
+# are never COPY sources, so they stay listed. mushpi-docs is absent on purpose:
+# nothing materializes it here.
+mushpi-grow
+mushpi-mock
+
+# IDE / hooks
+.vscode
+.idea
+.husky
+
+# --- Parent-context additions -------------------------------------------------
+# Only reachable when the context is the workspace directory holding this repo:
+# the same state, secrets and non-input repos one level down, plus the sibling
+# clones that sit *inside* it. Inert in a CI checkout of this repo alone. Nothing
+# here may match a `COPY` source — `**/data` is deliberately absent for that
+# reason (the server's and client's source trees are what a `data/` directory
+# would otherwise swallow).
+**/.venv
+**/mushpi-data
+**/mushpi-demo-data
+**/data-test
+**/.demo-mock-config.json
+**/mushpi-grow
+**/mushpi-mock
+.opencode
+docs

@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
-# demo-stack.sh — the single documented entry point for the demo stack
-# (docker-compose.demo.yml): server + dashboard + five simulated Pico units,
-# one command, on a laptop, with a disposable data directory.
+# demo-stack.sh — the single documented entry point for the demo stack: server +
+# dashboard + five simulated Pico units, one command, on a laptop, with a
+# disposable data directory.
+#
+# Two image modes, chosen by the internal switch MUSHPI_DEMO_LOCAL — set by
+# scripts/demo-stack-local.sh, an internal seam of that wrapper and not a user
+# knob (see REFERENCE.md §Local demo stack) — both sharing
+# docker-compose.demo.base.yml:
+#   published (default)  base + docker-compose.demo.yml        — pulls GHCR images
+#   local build          base + docker-compose.demo-local.yml  — builds them here
+#                                                                      from ../mushpi-server,
+#                                                                      ../mushpi-client and
+#                                                                      ../mushpi-mock
+# scripts/demo-stack-local.sh is the wrapper that sets the local mode; run it
+# from the sibling layout it needs.
 #
 # Usage:
 #   scripts/demo-stack.sh              # foreground (Ctrl+C stops it); after
@@ -10,13 +22,16 @@
 #   scripts/demo-stack.sh -d           # detached; extra args pass through to
 #                                      # `docker compose ... up`; the seed is
 #                                      # verified before the script exits
+#   scripts/demo-stack-local.sh        # same, but building the images from this
+#                                      # machine's working copies (checks the
+#                                      # sibling layout it needs first)
 #
 # What it does: sources `.env` if present (optional — see below), validates
 # the announce secret against the server's public-demo rules, generates
 # .demo-mock-config.json for the mock container (five units on the
 # server-seeded handles tent-one … tent-five), ensures the demo data
-# directory exists, then brings the stack up with
-# `docker compose -f docker-compose.demo.yml up "$@"`. On the detached path
+# directory exists, then brings the stack up with `docker compose <the active
+# mode's two -f files> up "$@"`. On the detached path
 # (`-d`) it additionally verifies the demo profile actually came up as designed
 # (verify_demo_seed — seeded reading depth inside a window anchored to each
 # unit's own data, the six-unit roster, and batch placement — then
@@ -51,6 +66,29 @@ if [ -f .env ]; then
   set +a
 fi
 
+# ---------------------------------------------------------------------------
+# IMAGE MODE — which compose files get merged. The two modes are mutually
+# exclusive and share docker-compose.demo.base.yml, so the ONLY difference
+# between a published run and a local one is where the two images come from and
+# which host ports are published; everything below (secret resolution, mock
+# config, seeding verification, poll identity) is mode-independent.
+#   published (default)  base + docker-compose.demo.yml        — GHCR images
+#   local build          base + docker-compose.demo-local.yml  — built here
+# The switch is MUSHPI_DEMO_LOCAL, set by scripts/demo-stack-local.sh — an
+# internal seam of that wrapper, not a knob to export by hand.
+if [ "${MUSHPI_DEMO_LOCAL:-0}" = "1" ]; then
+  COMPOSE_FILES=(-f docker-compose.demo.base.yml -f docker-compose.demo-local.yml)
+  echo "demo-stack: LOCAL BUILD mode — images mushpi:demo-local and mushpi-mock:demo-local are built on this machine from the working copies at ../mushpi-server, ../mushpi-client and ../mushpi-mock, uncommitted changes included. No CI run, no registry: nothing here is ever pushed or pulled. A tag that already exists locally is NOT rebuilt by 'up', so pass --build to pick up edits to a working copy. The dashboard port collides with anything else on ${MUSHPI_DEMO_PORT:-3000} — set MUSHPI_DEMO_PORT, or stop the other listener."
+else
+  COMPOSE_FILES=(-f docker-compose.demo.base.yml -f docker-compose.demo.yml)
+  echo "demo-stack: PUBLISHED mode — images come from ghcr.io/mushroom-pi (MUSHPI_IMAGE_TAG, MUSHPI_MOCK_IMAGE_TAG; both default latest). To build them from this machine's working copies instead, run scripts/demo-stack-local.sh — it checks the sibling layout it needs and selects the local mode."
+fi
+# The command as an array for execution, and as a single string (via [*]) for
+# the one-liners printed for a human to paste — both spell the ACTIVE mode's
+# file list, so a pasted verifier command talks to the stack that is actually
+# running rather than defaulting back to the published files.
+COMPOSE_CMD=(docker compose "${COMPOSE_FILES[@]}")
+
 # Server-side rules being mirrored (config.schema.ts): PICO_ANNOUNCE_SECRET is
 # required, min 6 chars, and a demo boot explicitly refuses the published dev
 # default. Failing here gives a readable message instead of a crash-looping
@@ -71,7 +109,7 @@ esac
 DATA_DIR="${MUSHPI_DEMO_DATA_DIR:-./mushpi-demo-data}"
 mkdir -p "$DATA_DIR"
 
-# Generate the mock's config. Fixed values are shared with docker-compose.demo.yml:
+# Generate the mock's config. Fixed values are shared with docker-compose.demo.base.yml:
 #   - "mushpi" is the server service's DNS name on the mushpi-demo bridge;
 #   - 172.28.0.10 is the mock container's fixed address (compose ipv4_address) —
 #     units announce it so the server's 60s poll reaches them across the bridge
@@ -86,7 +124,7 @@ mkdir -p "$DATA_DIR"
 # deliberately absent — it is the roster's offline unit, and a mock that
 # announced it would make it reachable.
 #
-# The path below is hardcoded at the repo root because docker-compose.demo.yml
+# The path below is hardcoded at the repo root because docker-compose.demo.base.yml
 # mounts exactly that location (`./.demo-mock-config.json:/app/config.json:ro`).
 # Where a containerised run of this script should write it is a
 # deployment-target decision that needs BOTH halves changed together — making
@@ -114,7 +152,7 @@ chmod 600 .demo-mock-config.json
 # Seed bookkeeping shared by the verifier and the foreground guidance. Both
 # values are the SERVER's demo-seeding knobs (the mock does not seed): the
 # defaults mirror the `environment:` entries passed to mushpi in
-# docker-compose.demo.yml — same variable NAMES, so one `.env` line retunes the
+# docker-compose.demo.base.yml — same variable NAMES, so one `.env` line retunes the
 # container and the verifier together and the two cannot drift. 1440 = one
 # reading per minute per unit. SEED_READINGS_DAYS has a server-side default of
 # 14; compose pins 15 here and the demo's depth is expressed by that pin. The
@@ -133,7 +171,7 @@ SEED_EXPECTED=$(( SEED_READINGS_DAYS * 1440 ))
 # must never mutate demo state, and a missing file simply throws — the retry
 # loop treats a failed exec as "not ready yet". node applies the thresholds
 # itself and exits 0/1, so bash only decides "still polling" vs "done".
-# /data/app.sqlite is the server's SQLITE_PATH in docker-compose.demo.yml —
+# /data/app.sqlite is the server's SQLITE_PATH in docker-compose.demo.base.yml —
 # keep the two in sync.
 #
 # Three assertions, all read-only, all against the server-seeded demo roster:
@@ -218,7 +256,7 @@ verify_demo_seed() {
   echo "demo-stack: verifying the demo seed — expecting exactly ${SEED_EXPECTED} readings per unit (${SEED_READINGS_DAYS} day(s) x 1440/min) inside the window anchored to each unit's own oldest reading, the six-unit seeded roster, and in-progress batches on tent-one … tent-four ..."
   local deadline=$(( $(date +%s) + 30 )) out=''
   while :; do
-    if out=$(docker compose -f docker-compose.demo.yml exec -T mushpi node -e "$SEED_JS" 2>&1); then
+    if out=$("${COMPOSE_CMD[@]}" exec -T mushpi node -e "$SEED_JS" 2>&1); then
       echo "demo-stack: seed VERIFIED — readings seeded, roster and batch placement match the demo profile:"
       printf '%s\n' "$out" | sed 's/^/  /'
       return 0
@@ -231,7 +269,7 @@ verify_demo_seed() {
 
   echo "demo-stack: SEED VERIFICATION FAILED — expected exactly ${SEED_EXPECTED} readings per unit inside its data-anchored window plus the seeded roster and batch placement within 30s; last observed (per-unit counts, the derived window, roster, batch placement, or the error that replaced them):" >&2
   printf '%s\n' "$out" | sed 's/^/  /' >&2
-  echo "demo-stack: the seeder is the server itself — inspect it with: docker compose -f docker-compose.demo.yml logs mushpi" >&2
+  echo "demo-stack: the seeder is the server itself — inspect it with: ${COMPOSE_CMD[*]} logs mushpi" >&2
   echo "demo-stack: a short or absent seed means the server's boot seeding did not complete — look for the \"Demo seeding start — boundary …\" and \"Demo seeding complete\" lines in those logs; if a seed count there falls short of ${SEED_EXPECTED} per unit, or the completion line is missing (or a \"Demo seeding failed\" line replaced it), the boot seeding is the failing component." >&2
   return 1
 }
@@ -256,7 +294,7 @@ verify_poll_identity() {
   echo "demo-stack: verifying announce/poll identity — expecting a non-NULL ip and at least one reading newer than the last two poll intervals for each of tent-one … tent-five (tent-six is the offline unit and is not checked; up to ~150s for the first live poll) ..."
   local deadline=$(( $(date +%s) + 150 )) out=''
   while :; do
-    if out=$(docker compose -f docker-compose.demo.yml exec -T mushpi node -e "$POLL_JS" 2>&1); then
+    if out=$("${COMPOSE_CMD[@]}" exec -T mushpi node -e "$POLL_JS" 2>&1); then
       echo "demo-stack: announce/poll identity VERIFIED — every mocked unit announced and is being polled:"
       printf '%s\n' "$out" | sed 's/^/  /'
       return 0
@@ -269,7 +307,7 @@ verify_poll_identity() {
 
   echo "demo-stack: POLL IDENTITY VERIFICATION FAILED — within ~150s the units marked BAD below never showed a live poll; last observed (per-unit ip and newest reading, the poll horizon, or the error that replaced them):" >&2
   printf '%s\n' "$out" | sed 's/^/  /' >&2
-  echo "demo-stack: this is an announce/poll failure, NOT a seeding failure — the announced IP/port was not persisted or the poll target is wrong (the poll URL is built from both, so a stale seeded port breaks polling exactly like a wrong ip). Look for \"Pico unit N unreachable (… tent-X.local …)\" lines in: docker compose -f docker-compose.demo.yml logs mushpi" >&2
+  echo "demo-stack: this is an announce/poll failure, NOT a seeding failure — the announced IP/port was not persisted or the poll target is wrong (the poll URL is built from both, so a stale seeded port breaks polling exactly like a wrong ip). Look for \"Pico unit N unreachable (… tent-X.local …)\" lines in: ${COMPOSE_CMD[*]} logs mushpi" >&2
   return 1
 }
 
@@ -290,7 +328,7 @@ if [ "$detach" = 1 ]; then
   # verify_poll_identity can run after the stack starts. `up -d` waits for
   # mushpi to be healthy (the mock's depends_on condition) before returning,
   # so the seed has a live server to announce against from the first poll.
-  docker compose -f docker-compose.demo.yml up "$@"
+  "${COMPOSE_CMD[@]}" up "$@"
   verify_demo_seed
   verify_poll_identity
 else
@@ -300,9 +338,9 @@ else
   # quotes are shell-escaped so the pasted argument survives parsing.
   if [ "$SEED_ENABLED" != "false" ]; then
     echo "demo-stack: foreground mode — once the stack is up, verify the demo profile from another shell (expect exactly ${SEED_EXPECTED} readings per unit inside the window anchored to each unit's own oldest reading, the six-unit seeded roster, and in-progress batches on tent-one … tent-four; the command exits 0 when all three hold):"
-    echo "  docker compose -f docker-compose.demo.yml exec -T mushpi node -e \"${SEED_JS//\"/\\\"}\""
+    echo "  ${COMPOSE_CMD[*]} exec -T mushpi node -e \"${SEED_JS//\"/\\\"}\""
   fi
   echo "demo-stack: then verify announce/poll identity from another shell (exits 0 when every mocked unit carries a non-NULL ip and at least one reading from the last two poll intervals; independent of SEED_ENABLED):"
-  echo "  docker compose -f docker-compose.demo.yml exec -T mushpi node -e \"${POLL_JS//\"/\\\"}\""
-  exec docker compose -f docker-compose.demo.yml up "$@"
+  echo "  ${COMPOSE_CMD[*]} exec -T mushpi node -e \"${POLL_JS//\"/\\\"}\""
+  exec "${COMPOSE_CMD[@]}" up "$@"
 fi

@@ -8,10 +8,13 @@
 !REFERENCE.md
 !README.md
 !Dockerfile
+!Dockerfile.dockerignore
 !Dockerfile.mock
 !Dockerfile.mock.dockerignore
 !docker-compose.yml
 !docker-compose.demo.yml
+!docker-compose.demo.base.yml
+!docker-compose.demo-local.yml
 !.dockerignore
 !.env.example
 !release.json

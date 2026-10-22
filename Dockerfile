@@ -7,6 +7,14 @@
 # sub-repos mushpi-server/ and mushpi-client/ are materialized inside it by CI,
 # or by transient local clones (recipe: REFERENCE.md). Self-hosters never build
 # at all — they pull the published image.
+#
+# The context may also be the DIRECTORY HOLDING this repo — a developer's
+# workspace, whose sub-repos are their own working copies (the local demo
+# stack: scripts/demo-stack-local.sh). This repo's own files are then one level
+# down, so every COPY that reads them goes through ARG MUSHPI_OPS_PREFIX, whose
+# default `.` keeps the CI/release build (context = this repo's root) exactly as
+# before. Sibling inputs keep their un-prefixed paths: mushpi-server/ and
+# mushpi-client/ are direct children of either context root.
 ###############################################################################
 
 ###############################################################################
@@ -38,7 +46,12 @@ COPY mushpi-client/ .
 # regenerate the gitignored API client before building.
 COPY mushpi-server/spec/openapi.json ./openapi.json
 # Release-bundle manifest (repo root) → baked into the SPA as __APP_RELEASE_VERSION__.
-COPY release.json /app/release.json
+# MUSHPI_OPS_PREFIX is this repo's own path inside the build context: `.` when the
+# context is this repo's root (CI, release builds, the hub compose override), and
+# `mushpi-ops` when the context is the parent workspace directory (the local demo
+# stack — see REFERENCE.md §Local demo stack).
+ARG MUSHPI_OPS_PREFIX=.
+COPY ${MUSHPI_OPS_PREFIX}/release.json /app/release.json
 RUN yarn gen:client && yarn gen:schemas
 
 # Same-origin API base: the SPA calls the server on the same origin.
@@ -168,7 +181,11 @@ COPY --from=server-build /app/public ./public
 # then drops to the `node` user with setpriv and execs the CMD. Fails loudly
 # (with an operator-readable remedy) if it runs unprivileged and /data is not
 # writable. See REFERENCE.md for the full behaviour.
-COPY scripts/docker-entrypoint.sh /usr/src/app/docker-entrypoint.sh
+#
+# Re-declared here: an ARG is scoped to the stage it is declared in, and the
+# default `.` keeps the CI/release build unchanged (see the client-build stage).
+ARG MUSHPI_OPS_PREFIX=.
+COPY ${MUSHPI_OPS_PREFIX}/scripts/docker-entrypoint.sh /usr/src/app/docker-entrypoint.sh
 RUN chmod +x /usr/src/app/docker-entrypoint.sh
 
 # ServeStaticModule requires this absolute path in prod (Joi-enforced).
