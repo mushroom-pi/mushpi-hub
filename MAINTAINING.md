@@ -37,6 +37,21 @@ A `<dockerfile>.dockerignore` **replaces** the shared `.dockerignore` rather tha
 
 The local overlay's images are tagged `mushpi:demo-local` and `mushpi-mock:demo-local`. The names are **unqualified**, so they resolve to no registry at all — the local stack is never pushed and never pulled. Because they are plain local tags, `up` reuses one that already exists **without rebuilding it**: after editing a working copy, pass `--build` (`bash scripts/demo-stack-local.sh --build` forwards it to `docker compose … up`) to rebuild and pick up the change — or run the `build` command first.
 
+### The nightly reset (`scripts/demo-reset.sh`)
+
+Both demo services restart every night at 03:00 host local time (a systemd timer on the demo host — the install/enable procedure is in `DEPLOYMENT.md`), and the server's demo-profile clean start clears the database and uploaded images on every demo boot before re-seeding. That is what re-anchors the demo. The reset **never pulls an image**: it restarts whatever is already present, and updating the demo stays an explicit operator action (pull the new image and recreate the stack, or re-run the stack's start command). It must **not** be changed into an unattended pull — a bad release must never land unattended at 03:00.
+
+Test the reset by hand, without waiting for 03:00, from the demo checkout:
+
+```bash
+bash scripts/demo-reset.sh            # published-image demo stack
+bash scripts/demo-reset.sh --local    # local-build demo stack
+```
+
+On success the script writes the reset's ISO 8601 UTC timestamp to `./mushpi-demo-reset.status` (gitignored, beside the compose files), and the same line goes to the journal. Inspect the schedule and its history with `systemctl status mushpi-demo-reset.timer`, `journalctl -u mushpi-demo-reset.service` and `cat mushpi-demo-reset.status`.
+
+The script refuses to run unless the rendered compose configuration is the demo profile and the demo data directory is not the hub's data directory — it cannot run on a real hub.
+
 ## Container Networking Notes (mDNS / `.local`)
 
 How the server reaches Pico units from inside the container. This is factual behavior of the current setup, not a locked decision.

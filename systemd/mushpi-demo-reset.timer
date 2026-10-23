@@ -1,0 +1,46 @@
+# mushpi-demo-reset.timer — the nightly schedule for the demo reset.
+#
+# 03:00 HOST LOCAL TIME, deliberately. The reset is about the demo's audience, so
+# the quiet hour is a local one; this unit is not UTC-pinned and has no
+# Timezone= override — it follows whatever timedated reports for the host.
+#
+# WHY 03:00 AND NOT 02:00: on the spring-forward night the major Northern
+# Hemisphere regimes jump 02:00 -> 03:00 (US and mainland Europe), so a wall clock
+# reading of 02:00 never occurs and an OnCalendar=*-*-* 02:00:00 silently misses
+# that night. 03:00 exists on every night of the year, in every one of those
+# regimes, which is what makes "the demo resets nightly" a statement that holds
+# across March. On the autumn fall-back night an hour can occur twice (much of
+# Europe re-reads 02:00-03:00, the US re-reads 01:00-02:00), so a host in the
+# former zones may reset twice on that single night. That is harmless by design:
+# clean start wipes and re-seeds from nothing, so a second pass returns the same
+# populated state, and nothing here is flag-gated.
+#
+# Persistent=false on purpose — this is NOT a catch-up job. A missed reset is
+# cheap (the next one clears whatever accumulated); a reset that fires late is
+# not, because it wipes the demo an operator or a visitor is looking at. A host
+# that was off through 03:00 and boots at 14:00 must NOT see a reset the moment
+# systemd comes back. That is exactly what Persistent=true would do, so it stays
+# false and the timer waits for the next scheduled hour.
+#
+# AccuracySec=1s: the default accuracy window (1 minute) exists to spread load
+# across a fleet of machines. This is one host and one job, so fire at the second
+# named instead of drifting.
+#
+# There is deliberately NO Requires= or After= for mushpi-demo-reset.service in
+# the [Unit] section below: a Requires= there would START the service the instant
+# the timer is enabled, i.e. an immediate wipe-and-reseed at `enable` time. The
+# [Timer] Unit= line is the correct, non-triggering linkage.
+[Unit]
+Description=Nightly schedule for the Mushroom Pi demo reset
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+AccuracySec=1s
+Persistent=false
+Unit=mushpi-demo-reset.service
+
+[Install]
+# Without this, `systemctl enable mushpi-demo-reset.timer` creates no alias and
+# the timer never starts at boot — enabling a timer is its [Install] section's
+# job, not the act of starting it once by hand.
+WantedBy=timers.target

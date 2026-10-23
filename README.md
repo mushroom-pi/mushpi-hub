@@ -46,6 +46,8 @@ The trade-off is honest: it needs those three repos on disk **and** a Docker bui
 
 Running it locally does **not** make it a development environment. Both routes use the same `NODE_ENV=demo` profile, and that profile refuses every write with `403` except Pico announce — you cannot create batches, edit recipes or manage units from the dashboard. Building from your working copies changes where the code came from, not what the stack allows; it is there so you can confirm your changes still produce the showcase. For a stack you can actually write to, run the server in its normal dev/local profile instead.
 
+An installed demo also resets itself: a nightly systemd timer (03:00 host local time) restarts both demo services, and the demo profile's clean start then re-seeds the database and uploaded images, so each day begins from a fresh, populated demo. The last successful reset is stamped into `./mushpi-demo-reset.status` (gitignored), and the same line goes to the journal. The reset never pulls an image — updating the demo is an explicit operator action. Install, disable and manual-run procedures: the published documentation site (`deployment/` pages) and `DEPLOYMENT.md` / `MAINTAINING.md` in this repo.
+
 ## What's here
 
 | File | Purpose |
@@ -60,7 +62,11 @@ Running it locally does **not** make it a development environment. Both routes u
 | `release.json` | Release manifest — the component versions in this bundle |
 | `scripts/verify-release.sh` | Checks the manifest against the committed component versions |
 | `scripts/demo-stack.sh` | The demo stack's single entry point (published mode) |
+| `scripts/demo-verify.sh` | The demo profile's post-start assertions in one place — seeded history, roster, batch placement, announce/poll identity and the demo-volume marker; shared by the stack entry point and the nightly reset |
 | `scripts/demo-stack-local.sh` | The demo stack's local-build entry point — no CI, no registry |
+| `scripts/demo-reset.sh` | Nightly reset — restarts both demo services so the demo profile's clean start re-seeds; the guard keeps it off a real hub |
+| `systemd/mushpi-demo-reset.service` | Example systemd unit running `demo-reset.sh`; the `/opt/mushpi-ops` paths are install-time placeholders |
+| `systemd/mushpi-demo-reset.timer` | Example timer — nightly at 03:00 host local time |
 | `.github/workflows/publish.yml` | CI: builds and pushes both images on `main` and `v*` tags |
 | `DEPLOYMENT.md` | Release-repo notes for operators — the full deployment guide is on the documentation site |
 | `MAINTAINING.md` | How to build and release it (maintainers) |
