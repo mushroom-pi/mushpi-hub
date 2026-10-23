@@ -9,8 +9,8 @@
 # at all — they pull the published image.
 #
 # The context may also be the DIRECTORY HOLDING this repo — the shape the local
-# demo build uses: the private mushpi-demo repo's docker-compose.demo-
-# local.yml points the hub image's build at this file from the workspace root,
+# demo build uses: the private mushpi-demo repo's docker-compose.local.yml points
+# the hub image's build at this file from the workspace root,
 # where the sibling repos are the developer's own working copies. This repo's
 # own files are then one level down, so every COPY that reads them goes through
 # ARG MUSHPI_HUB_PREFIX — that build passes `mushpi-hub`, and the default `.`
