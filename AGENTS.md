@@ -1,8 +1,8 @@
-# mushpi-ops — Release & Packaging
+# mushpi-hub — Release & Packaging
 
 This repo is the **release/packaging layer** for the Mushroom Pi system. It owns the container build, the compose service definitions, the release manifest, and the publish workflow. It publishes one image: `ghcr.io/mushroom-pi/mushpi-hub` — the server API and the built React dashboard on one port, the **hub** image, named after this repo.
 
-The demo environment — the demo compose stack, the mock image and the hosted deployment — is **not** built here. It lives in the private `mushpi-demo-infra` repo, which is where the demo issues and the deployment records belong.
+The demo environment — the demo compose stack, the mock image and the hosted deployment — is **not** built here. It lives in the private `mushpi-demo` repo, which is where the demo issues and the deployment records belong.
 
 It is **not a runtime tier** and contains no application code. The orchestration root (its sibling directory) owns the agent definitions, the full-stack architecture context, and the cross-repo contracts. The sub-repos — `mushpi-server`, `mushpi-client`, `mushpi-grow`, `mushpi-mock`, `mushpi-docs` — are sibling git repos, never vendored here.
 
@@ -15,7 +15,7 @@ On-demand gotchas for editing this layer live in [`REFERENCE.md`](./REFERENCE.md
 | `.github/workflows/publish.yml` | CI: on push to `main` or a `v*` tag, checks out the sub-repos, runs the tag⇔manifest guard and the parity check, then builds and pushes the **hub** image to GHCR via `./.github/actions/build-image` |
 | `.github/workflows/publish-dev.yml` | CI (manual `workflow_dispatch` only): dev/pre-release build of the same image with a required free-form `image_tag` plus an automatic `dev-sha-<short>` tag; skips the manifest guard and parity check; never moves `latest` |
 | `.github/actions/build-image/action.yml` | Composite action — the mechanical build/push (QEMU, Buildx, GHCR login, metadata, build-push) shared by both publish workflows; carries no trigger, guard or tag policy, and an optional `file` input selects the Dockerfile (default `./Dockerfile`, which every hub caller relies on) (see `REFERENCE.md`) |
-| `Dockerfile` | **Hub** image — three-stage build (client → server → runtime); the runtime stage carries the server's native-build toolchain plus the container's mDNS resolver and its NSS client; build context = this repo's root (`ARG MUSHPI_HUB_PREFIX` supports a parent-context build; its caller is the demo-local overlay in `mushpi-demo-infra`) |
+| `Dockerfile` | **Hub** image — three-stage build (client → server → runtime); the runtime stage carries the server's native-build toolchain plus the container's mDNS resolver and its NSS client; build context = this repo's root (`ARG MUSHPI_HUB_PREFIX` supports a parent-context build; its caller is the demo-local overlay in `mushpi-demo`) |
 | `Dockerfile.dockerignore` | Per-Dockerfile ignore set for the hub build — **replaces** `.dockerignore` for it, so it mirrors that file's rules and adds the parent-context forms (see `REFERENCE.md` §Build-context layout) |
 | `docker-compose.yml` | Hub service `mushpi-hub` — pulls `ghcr.io/mushroom-pi/mushpi-hub` (tag from `MUSHPI_HUB_IMAGE_TAG`, default `latest`), runs on the **host network** and persists `MUSHPI_HUB_DATA_DIR` (default `./mushpi-data`) at `/data`; the missing `ports:` block is load-bearing (see `REFERENCE.md`) |
 | `docker-compose.override.yml` | Local build toggle — **untracked by design**, absent from clones |

@@ -1,4 +1,4 @@
-# mushpi-ops — Reference (On-Demand)
+# mushpi-hub — Reference (On-Demand)
 
 Long-tail gotchas for the release/packaging layer. **Load only when the task touches these areas** — do not read on every spawn. The always-loaded [`AGENTS.md`](./AGENTS.md) holds the file map, the sibling-materialization model, verification commands, and core conventions.
 
@@ -93,7 +93,7 @@ Topics covered here: build-context layout · Yarn Berry 4 / Corepack · `better-
 ## Shared build action (`.github/actions/build-image`)
 
 - The composite action is **deliberately dumb**: toolchain setup, login, metadata, build/push only. **Callers own triggers, guards and tag policy** — each workflow passes its own `registry`/`image_name` (from its `env`), `token`, `push`, `flavor` and `tags`. That explicit local policy is what guarantees a dev build cannot move `latest`. **Never add a `mode: release|dev` input, or any ref/branch logic, to the action.**
-- The optional `file` input (default `./Dockerfile`) selects which Dockerfile to build. **The hub callers must not pass it** — omitting it is what keeps the hub path byte-identical, and the default is the contract. It currently has no caller: its only consumer was the mock job, which now lives in the private `mushpi-demo-infra` repo. Keep it as a build-input selector, not ref or tag logic, so it does not breach the "stays dumb" rule.
+- The optional `file` input (default `./Dockerfile`) selects which Dockerfile to build. **The hub callers must not pass it** — omitting it is what keeps the hub path byte-identical, and the default is the contract. It currently has no caller: its only consumer was the mock job, which now lives in the private `mushpi-demo` repo. Keep it as a build-input selector, not ref or tag logic, so it does not breach the "stays dumb" rule.
 - `flavor` and `tags` are **required** inputs. `publish.yml` passes `latest=auto` (metadata-action's default; a `v*` tag push moves `latest`), `publish-dev.yml` passes `latest=false`.
 - Composite actions cannot reliably read the `secrets` context — the token arrives as the `token` input (`token: ${{ secrets.GITHUB_TOKEN }}` from each caller; both keep `packages: write`). `push` is a string: the action compares `inputs.push == 'true'`.
 - `.gitignore` allowlists `.github/actions/**` explicitly (mirroring `!.github/workflows/**`). A new file under `.github/actions/` that falls outside that pattern is silently uncommittable, which breaks both workflows in CI.

@@ -4,7 +4,7 @@ This is the maintainer-facing half: packaging internals and the release process.
 
 ## How the image is built
 
-The image is built by `Dockerfile` from this repository's root as its Docker context. CI checks out the two build inputs — `mushpi-server` and `mushpi-client` — into that root and builds there; on a `v*` tag it also checks out `mushpi-grow` and `mushpi-mock` so the bundle-parity check can run. Firmware never enters the image; the manifest records what the bundle was tested against. The result is pushed to `ghcr.io/mushroom-pi/mushpi`, the product name pinned via `github.repository_owner` and deliberately decoupled from this repo's name. Locally, the siblings are materialized as transient clones inside this repo; the recipe and the packaging guardrails are in `REFERENCE.md`.
+The image is built by `Dockerfile` from this repository's root as its Docker context. CI checks out the two build inputs — `mushpi-server` and `mushpi-client` — into that root and builds there; on a `v*` tag it also checks out `mushpi-grow` and `mushpi-mock` so the bundle-parity check can run. Firmware never enters the image; the manifest records what the bundle was tested against. The result is pushed to `ghcr.io/mushroom-pi/mushpi-hub` — the image is **named after this repo**, because this repo is what assembles `mushpi-server` and `mushpi-client` into the deployable hub, so the image name and the repo name say the same thing on purpose; the owner stays interpolated from `github.repository_owner`, so an org rename cannot break the name. Locally, the siblings are materialized as transient clones inside this repo; the recipe and the packaging guardrails are in `REFERENCE.md`.
 
 ## Container Networking Notes (mDNS / `.local`)
 
@@ -41,7 +41,7 @@ The axes are independent: a firmware **MAJOR** bump *usually* accompanies an `ap
 | Per-component SemVer — firmware | `_SOFTWARE_VERSION` (`mushpi-grow/app/state.py`) | `mushpi-grow` | Server (runtime — see *api_version* below) |
 | Per-component SemVer — server | `version` (`package.json`) | `mushpi-server` | Client (build-time — see *Client ↔ Server lockstep* below) + Pico units (runtime, as caller) |
 | Per-component SemVer — client | `version` (`package.json`) | `mushpi-client` | Human operator (terminal UI — no API consumers) |
-| Release bundle | `release.json` (5 required fields) + git tag `vX.Y.Z` | `mushpi-ops` | Operator, release audit |
+| Release bundle | `release.json` (5 required fields) + git tag `vX.Y.Z` | `mushpi-hub` | Operator, release audit |
 | `api_version` | integer ≥ 1, sourced from grow contract spec (`spec/openapi.yaml`) | `mushpi-grow` | Server (runtime handshake — see *api_version* below) |
 | Mock (dual) | own `pyproject.toml` version + represented `VERSION`/`_SOFTWARE_VERSION`/`_API_VERSION` | `mushpi-mock` | Dev/demo — mirrors grow (see *Mock dual-versioning* below) |
 
@@ -230,7 +230,7 @@ The mock-only `GET /version` endpoint returns all three at once (`mock_version`,
 
 ### 1. What a release is
 
-A release is a **git tag `vX.Y.Z`** on this repo (`mushpi-ops`) plus a **committed `release.json` manifest at this repo's root**, kept in lockstep. The statement it makes — "these specific component versions are tested to work together" — and the 5-field manifest schema are normative in **Version & Release Semantics** above; tag ⇔ manifest equality is enforced twice (subsection 4's consistency rule, via the local pre-tag check and the CI manifest guard below).
+A release is a **git tag `vX.Y.Z`** on this repo (`mushpi-hub`) plus a **committed `release.json` manifest at this repo's root**, kept in lockstep. The statement it makes — "these specific component versions are tested to work together" — and the 5-field manifest schema are normative in **Version & Release Semantics** above; tag ⇔ manifest equality is enforced twice (subsection 4's consistency rule, via the local pre-tag check and the CI manifest guard below).
 
 > **CI status note:** `publish.yml` lives in this repo and triggers on pushes to `main` and on `v*` tags. A push to `main` publishes an image but does **not** create a GitHub Release, git tag or `release.json` change — those happen only on a `v*` tag push. The first published image comes from this repo's first `v*` tag cut after the release-repo split lands; before that there are no published image tags to watch.
 
@@ -325,7 +325,7 @@ A manual-only complement to the release workflow above: Actions → *publish-dev
 
 **Inputs:**
 
-- `ops_ref` — the `mushpi-ops` ref to build (default `main`).
+- `hub_ref` — the `mushpi-hub` ref to build (default `main`).
 - `server_ref` / `client_ref` — optional pins for the two sub-repos to specific refs; blank uses their default branches.
 - `image_tag` — required, free-form.
 - `push` — toggle; off builds without publishing.
@@ -334,6 +334,6 @@ A manual-only complement to the release workflow above: Actions → *publish-dev
 
 Dev builds deliberately skip the release-manifest guard and `scripts/verify-release.sh` — they are not bundle releases.
 
-**Pre-release convention.** To test a candidate before a release, dispatch with `image_tag: 0.9.0-rc1`, and pull it on the target host via `MUSHPI_IMAGE_TAG`. The real release is still cut the normal way — the `vX.Y.Z` tag plus the matching `release.json` change in one commit, through `publish.yml`. Never retag an rc image as the release; rebuild it on the tag.
+**Pre-release convention.** To test a candidate before a release, dispatch with `image_tag: 0.9.0-rc1`, and pull it on the target host via `MUSHPI_HUB_IMAGE_TAG`. The real release is still cut the normal way — the `vX.Y.Z` tag plus the matching `release.json` change in one commit, through `publish.yml`. Never retag an rc image as the release; rebuild it on the tag.
 
-**Cleanup (manual).** Dev tags are not deleted automatically and there is no retention policy. Delete stale versions by hand from the GHCR package page for `ghcr.io/mushroom-pi/mushpi` (or via the GitHub API) when they pile up.
+**Cleanup (manual).** Dev tags are not deleted automatically and there is no retention policy. Delete stale versions by hand from the GHCR package page for `ghcr.io/mushroom-pi/mushpi-hub` (or via the GitHub API) when they pile up.
