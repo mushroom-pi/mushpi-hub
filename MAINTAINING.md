@@ -6,52 +6,6 @@ This is the maintainer-facing half: packaging internals and the release process.
 
 The image is built by `Dockerfile` from this repository's root as its Docker context. CI checks out the two build inputs — `mushpi-server` and `mushpi-client` — into that root and builds there; on a `v*` tag it also checks out `mushpi-grow` and `mushpi-mock` so the bundle-parity check can run. Firmware never enters the image; the manifest records what the bundle was tested against. The result is pushed to `ghcr.io/mushroom-pi/mushpi`, the product name pinned via `github.repository_owner` and deliberately decoupled from this repo's name. Locally, the siblings are materialized as transient clones inside this repo; the recipe and the packaging guardrails are in `REFERENCE.md`.
 
-## The demo stack: base + one of two overlays
-
-The demo compose is split into a **base file plus one of two overlays**, never any other combination. `docker-compose.demo.base.yml` holds everything the stack *is* — the two services (`mushpi`, `mock`), the `NODE_ENV=demo` profile, the fixed-subnet bridge, the shared `/data` mount, the seeding knobs and the `depends_on` — but carries no `image:`, no `build:` and no host `ports:`. One overlay supplies image provenance and host ports:
-
-- **`docker-compose.demo.yml`** — the **published** overlay (the default). It selects the two GHCR tags (`ghcr.io/mushroom-pi/mushpi`, `ghcr.io/mushroom-pi/mushpi-mock`; both default `latest`) and loopback host ports. `scripts/demo-stack.sh` merges exactly this file onto the base.
-- **`docker-compose.demo-local.yml`** — the **local-build** overlay. It builds **both** images at context `..` (the directory holding this repo, where the sibling working copies live) and tags them with unqualified local names. `scripts/demo-stack-local.sh` merges exactly this file onto the base.
-
-`scripts/demo-stack.sh` merges **exactly two files** — the base plus whichever overlay the active mode selects — and never the hub's `docker-compose.yml` or `docker-compose.override.yml`, so a real hub deployment is untouched. The wrapper `scripts/demo-stack-local.sh` is the **only documented way into local mode**: it checks the sibling layout, sets the internal switch, and execs `demo-stack.sh`, so secret resolution, mock-config generation, `up` and both verifiers stay in one script and the two modes cannot drift.
-
-**The local build is still a demo, not a development environment.** Both overlays carry the same `NODE_ENV=demo` profile, and that profile makes the dashboard read-only: every write is refused with `403` except Pico announce, so there is no batch creation, no recipe editing and no unit management. Building the images from local working copies changes only *where the code came from* — it does not grant write access or turn the stack into a development setup. It exists to verify that uncommitted code still produces the showcase, which is why the demo profile lives where it does; for real data manipulation, run the server in its normal dev/local profile outside this stack.
-
-**`MUSHPI_DEMO_LOCAL` is an internal seam, not a knob.** It is set by `scripts/demo-stack-local.sh` alone and is what makes `demo-stack.sh` select the local overlay. Do not document it as something to export, and never tell a reader to set it by hand.
-
-### `ARG MUSHPI_OPS_PREFIX` — building from a parent context
-
-The hub `Dockerfile` is normally built with **this repo's root** as the context: CI and release builds materialize `mushpi-server/` and `mushpi-client/` inside it. The local demo changes the context to the **directory holding this repo**, where the sibling working copies sit directly. That moves this repo's *own* files one level down, which breaks every `COPY` that reads them — `release.json` (baked into the SPA as its release version) and `scripts/docker-entrypoint.sh` (the runtime entrypoint). `ARG MUSHPI_OPS_PREFIX` is the fix: those `COPY` sources are prefixed with it. Its default is `.`, so the CI/release build (context = this repo's root) is unchanged; only the local overlay passes `MUSHPI_OPS_PREFIX: mushpi-ops`. Sibling inputs (`mushpi-server/`, `mushpi-client/`) need no prefix — they are direct children of either context root.
-
-The ARG is **re-declared per stage**: ARGs are stage-scoped in a multi-stage Dockerfile, so a value declared in one stage does not exist in another. Each stage that `COPY`s a prefixed path — the client-build stage (for `release.json`) and the runtime stage (for `docker-entrypoint.sh`) — declares its own `ARG MUSHPI_OPS_PREFIX=.` with the same default.
-
-### `Dockerfile.dockerignore` — the parent context's only ignore file
-
-A `<dockerfile>.dockerignore` **replaces** the shared `.dockerignore` rather than merging with it: when a build runs `-f Dockerfile`, BuildKit reads `Dockerfile.dockerignore` and then does **not** read `.dockerignore`. A parent context has no ignore file of its own, so for the local demo build `Dockerfile.dockerignore` is the *only* thing between the build and a context upload containing the whole workspace — `.git`, `node_modules`, live demo state, the other sibling repos. It must exclude all of that while still admitting `mushpi-server/` and `mushpi-client/`, the build inputs, which must **never** appear in any ignore list.
-
-**Invariant — three ignore lists, two read per build.** The repo carries exactly three: `.dockerignore`, `Dockerfile.dockerignore` (the hub build) and `Dockerfile.mock.dockerignore` (the mock build). Only two are read per build: the relevant `<dockerfile>.dockerignore` plus *not* the shared one, or the shared one alone when a build names no Dockerfile-specific ignore file. `.dockerignore` and `Dockerfile.dockerignore` must stay **rule-for-rule mirrored** in their hub-shaped parts — `Dockerfile.dockerignore` adds only the parent-context forms (the nested `**/…` and sibling-state patterns that are inert in a CI checkout). Change one, mirror the change in the other, in the same commit.
-
-**Empirical check.** The contract is that every `COPY`/`ADD` source in a Dockerfile matches no pattern in all three lists — a listed build input is the failure that breaks a build. The cheap smoke test is the context size: `docker compose -f docker-compose.demo.base.yml -f docker-compose.demo-local.yml build mushpi mock --progress plain` must report a context of a few MB; hundreds of MB means the per-Dockerfile ignore file is not being applied. (`git check-ignore` is the wrong tool here — it reads `.gitignore`, not the dockerignore lists, so it proves nothing about a build context.)
-
-### Local-only tags and the `--build` rule
-
-The local overlay's images are tagged `mushpi:demo-local` and `mushpi-mock:demo-local`. The names are **unqualified**, so they resolve to no registry at all — the local stack is never pushed and never pulled. Because they are plain local tags, `up` reuses one that already exists **without rebuilding it**: after editing a working copy, pass `--build` (`bash scripts/demo-stack-local.sh --build` forwards it to `docker compose … up`) to rebuild and pick up the change — or run the `build` command first.
-
-### The nightly reset (`scripts/demo-reset.sh`)
-
-Both demo services restart every night at 03:00 host local time (a systemd timer on the demo host — the install/enable procedure is in `DEPLOYMENT.md`), and the server's demo-profile clean start clears the database and uploaded images on every demo boot before re-seeding. That is what re-anchors the demo. The reset **never pulls an image**: it restarts whatever is already present, and updating the demo stays an explicit operator action (pull the new image and recreate the stack, or re-run the stack's start command). It must **not** be changed into an unattended pull — a bad release must never land unattended at 03:00.
-
-Test the reset by hand, without waiting for 03:00, from the demo checkout:
-
-```bash
-bash scripts/demo-reset.sh            # published-image demo stack
-bash scripts/demo-reset.sh --local    # local-build demo stack
-```
-
-On success the script writes the reset's ISO 8601 UTC timestamp to `./mushpi-demo-reset.status` (gitignored, beside the compose files), and the same line goes to the journal. Inspect the schedule and its history with `systemctl status mushpi-demo-reset.timer`, `journalctl -u mushpi-demo-reset.service` and `cat mushpi-demo-reset.status`.
-
-The script refuses to run unless the rendered compose configuration is the demo profile and the demo data directory is not the hub's data directory — it cannot run on a real hub.
-
 ## Container Networking Notes (mDNS / `.local`)
 
 How the server reaches Pico units from inside the container. This is factual behavior of the current setup, not a locked decision.

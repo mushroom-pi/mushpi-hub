@@ -9,12 +9,13 @@
 # at all — they pull the published image.
 #
 # The context may also be the DIRECTORY HOLDING this repo — a developer's
-# workspace, whose sub-repos are their own working copies (the local demo
-# stack: scripts/demo-stack-local.sh). This repo's own files are then one level
-# down, so every COPY that reads them goes through ARG MUSHPI_OPS_PREFIX, whose
-# default `.` keeps the CI/release build (context = this repo's root) exactly as
-# before. Sibling inputs keep their un-prefixed paths: mushpi-server/ and
-# mushpi-client/ are direct children of either context root.
+# workspace, whose sub-repos are their own working copies. This repo's own files
+# are then one level down, so every COPY that reads them goes through
+# ARG MUSHPI_OPS_PREFIX, whose default `.` keeps the CI/release build (context =
+# this repo's root) exactly as before. Nothing passes the override today: its
+# only caller was the local demo build, which now lives in the private
+# mushpi-demo-infra repo. Sibling inputs keep their un-prefixed paths:
+# mushpi-server/ and mushpi-client/ are direct children of either context root.
 ###############################################################################
 
 ###############################################################################
@@ -47,9 +48,9 @@ COPY mushpi-client/ .
 COPY mushpi-server/spec/openapi.json ./openapi.json
 # Release-bundle manifest (repo root) → baked into the SPA as __APP_RELEASE_VERSION__.
 # MUSHPI_OPS_PREFIX is this repo's own path inside the build context: `.` when the
-# context is this repo's root (CI, release builds, the hub compose override), and
-# `mushpi-ops` when the context is the parent workspace directory (the local demo
-# stack — see REFERENCE.md §Local demo stack).
+# context is this repo's root (CI and release builds). A parent-context build would
+# pass `mushpi-ops`, but nothing does today — the demo build that used it now lives
+# in the private mushpi-demo-infra repo.
 ARG MUSHPI_OPS_PREFIX=.
 COPY ${MUSHPI_OPS_PREFIX}/release.json /app/release.json
 RUN yarn gen:client && yarn gen:schemas

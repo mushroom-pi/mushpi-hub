@@ -22,7 +22,7 @@ inputs:
       Path to the Dockerfile within the build context. Defaults to ./Dockerfile
       so the hub callers — which omit it entirely — build exactly as before; a
       caller publishing a different image from the same context passes it
-      explicitly (e.g. ./Dockerfile.mock). Mechanical only: which file to
+      explicitly (e.g. a second Dockerfile in that context). Mechanical only: which file to
       compile is not a ref or tag policy, and stays the caller's decision.
     required: false
     default: ./Dockerfile

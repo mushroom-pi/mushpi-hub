@@ -28,20 +28,4 @@ Create `.env` from `.env.example`; a few optional variables shape the run:
 
 > **Migrating from `./data`.** If you already have a populated `./data` directory from an earlier run, the new default (`./mushpi-data`) points somewhere else, so the stack would start with an empty data directory. Either stop the stack with `docker compose down` (**do not** use `-v`), rename the folder (`mv data mushpi-data`), and start it again — or keep the old folder where it is by setting `MUSHPI_DATA_DIR=./data` in `.env`. Nothing has been released yet, so this only affects local development checkouts.
 
-## The demo stack (try it without hardware)
-
-Separate from the hub deployment: the demo runs the whole system — hub plus five simulated Pico units — with nothing to flash. It has **two ways to run**: pull the published images (`bash scripts/demo-stack.sh`), or build both images locally from the sibling working copies with no CI run and no registry (`bash scripts/demo-stack-local.sh`). **When to use which:** the published path is the quick try-it for anyone with Docker; the local build is for exercising your own uncommitted working copies before they ship. Both run on `http://localhost:3000` (move it with `MUSHPI_DEMO_PORT`). **Neither mode is a development environment:** the demo runs the server's `NODE_ENV=demo` profile, which refuses every dashboard write with `403` except Pico announce — no batch creation, no recipe editing, no unit management. Building locally only changes where the code came from; it is for showcasing and for confirming uncommitted work still produces the showcase. Step-by-step procedures live on the published site — [`github.com/mushroom-pi/mushpi-docs`](https://github.com/mushroom-pi/mushpi-docs); the packaging mechanics behind the two modes are in `MAINTAINING.md`.
-
-### The nightly reset
-
-The demo stack returns itself to a fresh, populated state every night at **03:00 host local time**. A systemd timer (`mushpi-demo-reset.timer`) runs a one-shot service (`mushpi-demo-reset.service`) that restarts both demo services. The server's demo-profile clean start clears its database and uploaded images on every demo boot and then re-seeds, so that is what re-anchors the demo: after a reset the batch mix is ten finished, four in progress and three upcoming for that day, the readings history is regenerated, and any visitor changes from the day are gone. The drifting unit still drifts; the offline unit still reads offline. There is a short bounded downtime during a reset — the server does not answer until it has finished seeding, so a visitor never sees a partially seeded demo.
-
-**The reset never pulls an image** — it restarts whatever is already present. Updating the demo is an explicit operator action: pull the new image and recreate the stack (or re-run the stack's start command).
-
-To install the schedule, from this repo's checkout on the demo host:
-
-1. Copy both unit files, `systemd/mushpi-demo-reset.service` and `systemd/mushpi-demo-reset.timer`, to `/etc/systemd/system/`.
-2. Edit the `/opt/mushpi-ops` paths in the service unit — the `WorkingDirectory`, `ExecStart` and `EnvironmentFile` lines are **install-time placeholders**: point them at this checkout, keeping the three together.
-3. Run `sudo systemctl daemon-reload`, then `sudo systemctl enable --now mushpi-demo-reset.timer`.
-
-The reset script refuses to run unless the rendered compose configuration is the demo profile and the demo data directory is not the hub's data directory, so it cannot run on a real hub. The last successful reset stamps its ISO 8601 UTC timestamp into `./mushpi-demo-reset.status` (gitignored), and the same line goes to the journal — inspect with `systemctl status mushpi-demo-reset.timer`, `journalctl -u mushpi-demo-reset.service` and `cat mushpi-demo-reset.status`. To stop the schedule: `sudo systemctl disable --now mushpi-demo-reset.timer`.
+The demo environment — the demo stack, the mock image and its hosted deployment — is out of scope here: it lives in the private `mushroom-pi/mushpi-demo-infra` repo, and this repo ships only the hub image.

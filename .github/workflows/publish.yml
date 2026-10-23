@@ -16,11 +16,6 @@ env:
   # published as ghcr.io/mushroom-pi/mushpi rather than after the packaging repo.
   # The owner is interpolated so an org rename cannot break the name.
   IMAGE_NAME: ${{ github.repository_owner }}/mushpi
-  # Second product image: the simulated-units service of the demo stack
-  # (Dockerfile.mock → docker-compose.demo.yml → scripts/demo-stack.sh). Same
-  # naming convention as IMAGE_NAME: product family, owner interpolated so an
-  # org rename cannot break it. Published by build-and-push-mock below.
-  MOCK_IMAGE_NAME: ${{ github.repository_owner }}/mushpi-mock
 
 jobs:
   build-and-push:
@@ -122,51 +117,3 @@ jobs:
             type=sha
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
-  # ── Simulated-unit image for the demo stack ────────────────────────────────
-  # Same trigger, registry, token, push and tag/flavor policy as the hub job:
-  # a `v*` tag push moves this package's `latest` too, and pushes to `main`
-  # republish it — one version story across both product images. Deliberately
-  # parallel to build-and-push (no `needs:`): separate packages, separate
-  # runner workspaces, nothing shared. Unlike the hub job's tag-gated grow/mock
-  # checkouts (parity-check inputs only), the mock checkout here is
-  # UNCONDITIONAL — it is this image's build input (Dockerfile.mock COPYs from
-  # ./mushpi-mock). The shared context root is filtered for this build by
-  # Dockerfile.mock.dockerignore: BuildKit prefers `<dockerfile>.dockerignore`
-  # and it then REPLACES the hub-shaped `.dockerignore`, whose exclusions
-  # would otherwise starve this build of its only input. No release-manifest
-  # guard and no bundle-parity check run here: this image is not the bundle
-  # release — scripts/verify-release.sh stays the hub job's.
-  build-and-push-mock:
-    name: Build & push mock image
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout this repository (Dockerfile.mock, CI)
-        uses: actions/checkout@v7
-
-      - name: Checkout mushpi-mock into ./mushpi-mock
-        uses: actions/checkout@v7
-        with:
-          repository: ${{ github.repository_owner }}/mushpi-mock
-          path: mushpi-mock
-
-      # Delegates the mechanical build/push to the shared composite action,
-      # which now takes an optional `file` input (default ./Dockerfile — the
-      # hub step above omits it and is unaffected). Tag/flavor policy stays
-      # owned by THIS caller, exactly like the hub job (see REFERENCE.md).
-      - name: Build and push image
-        uses: ./.github/actions/build-image
-        with:
-          registry: ${{ env.REGISTRY }}
-          image_name: ${{ env.MOCK_IMAGE_NAME }}
-          file: ./Dockerfile.mock
-          token: ${{ secrets.GITHUB_TOKEN }}
-          push: 'true'
-          # Same policy as the hub image — metadata-action default flavor plus
-          # the explicit `latest` rule bound to main BY REF, not by the
-          # repository's default-branch setting (see the hub job's note).
-          flavor: latest=auto
-          tags: |
-            type=ref,event=branch
-            type=ref,event=tag
-            type=sha
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}

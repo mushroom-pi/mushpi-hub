@@ -2,14 +2,13 @@
 # image). BuildKit prefers `<dockerfile>.dockerignore` and then does NOT read the
 # shared `.dockerignore`, so this file is the *entire* ignore set for that build
 # and both lists must be kept in step (see REFERENCE.md §Build-context layout).
-# It has to cover two context roots with one file:
-#   - this repo's root — CI, release builds and the hub compose override, where
-#     the patterns below are exactly `.dockerignore`'s, so those builds are
-#     unchanged by this file existing;
-#   - the parent workspace directory — the local demo stack
-#     (scripts/demo-stack-local.sh), where this repo is a subdirectory and the
-#     siblings are the developer's own working copies. The final block holds the
-#     nested forms that only matter there, and matches nothing in a CI checkout.
+# It has to cover a parent-context build as well as this repo's root:
+#   - this repo's root — CI and release builds, where the patterns below are
+#     exactly `.dockerignore`'s, so those builds are unchanged by this file existing;
+#   - a parent workspace directory, where this repo is a subdirectory. The final
+#     block holds the nested forms that only matter there, and matches nothing in a
+#     CI checkout. Nothing uses that context today (the demo build that did now
+#     lives in the private mushpi-demo-infra repo); the block is kept inert.
 # Everything below is excluded from the context upload; nothing a `COPY` in the
 # Dockerfile reads may match — `mushpi-server/` and `mushpi-client/` are build
 # inputs and must NEVER be listed.
@@ -77,9 +76,7 @@ mushpi-mock
 # would otherwise swallow).
 **/.venv
 **/mushpi-data
-**/mushpi-demo-data
 **/data-test
-**/.demo-mock-config.json
 **/mushpi-grow
 **/mushpi-mock
 .opencode

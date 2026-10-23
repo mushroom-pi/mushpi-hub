@@ -9,12 +9,7 @@
 !README.md
 !Dockerfile
 !Dockerfile.dockerignore
-!Dockerfile.mock
-!Dockerfile.mock.dockerignore
 !docker-compose.yml
-!docker-compose.demo.yml
-!docker-compose.demo.base.yml
-!docker-compose.demo-local.yml
 !.dockerignore
 !.env.example
 !release.json
@@ -26,19 +21,6 @@
 !.github/**
 !.github/workflows/**
 !.github/actions/**
-# systemd units for the demo host — the nightly reset's schedule lives here
-# (paths inside them are install-time placeholders; see the units' own comments).
-!systemd/
-!systemd/**
-# Hosted-demo decision records — the research that produced the deploy/ tree.
-!research/
-!research/**
-# Hosted-demo bootstrap files for the Oracle Free Tier VM — cloud-init
-# user-data, the Caddy reverse-proxy config, the /opt/mushpi/.env template,
-# and the deploy/rollback script. All four are zero-secret by design (the
-# filled-in .env lives in /opt/mushpi, never in this tree).
-!deploy/
-!deploy/**
 
 # Local build toggle — deliberately untracked: self-hosters' clones never
 # contain it (they pull the published image); maintainers keep a local copy
@@ -62,12 +44,3 @@ mushpi-mock/
 # (SQLite DB, uploaded images, logs). Also covered by the blanket `*`
 # ignore above — this explicit rule documents the default's intent.
 mushpi-data/
-
-# Demo-stack scratch: the generated mock config (embeds the announce secret)
-# and the demo's disposable data directory. Both sit under the blanket `*`
-# ignore anyway — these explicit rules document intent, like mushpi-data/.
-# The reset status file is runtime state written by scripts/demo-reset.sh on
-# the host that runs the timer, never a packaging input.
-.demo-mock-config.json
-mushpi-demo-data/
-mushpi-demo-reset.status

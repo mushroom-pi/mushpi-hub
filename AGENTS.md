@@ -1,6 +1,8 @@
 # mushpi-ops — Release & Packaging
 
-This repo is the **release/packaging layer** for the Mushroom Pi system. It owns the container build, the compose service definitions, the release manifest, and the publish workflow. It publishes two images: `ghcr.io/mushroom-pi/mushpi` — the server API and the built React dashboard on one port, the **hub** image — and `ghcr.io/mushroom-pi/mushpi-mock`, the simulated Pico unit used by the demo stack (see `REFERENCE.md` §Demo stack).
+This repo is the **release/packaging layer** for the Mushroom Pi system. It owns the container build, the compose service definitions, the release manifest, and the publish workflow. It publishes one image: `ghcr.io/mushroom-pi/mushpi` — the server API and the built React dashboard on one port, the **hub** image.
+
+The demo environment — the demo compose stack, the mock image and the hosted deployment — is **not** built here. It lives in the private `mushpi-demo-infra` repo, which is where the demo issues and the deployment records belong.
 
 It is **not a runtime tier** and contains no application code. The orchestration root (its sibling directory) owns the agent definitions, the full-stack architecture context, and the cross-repo contracts. The sub-repos — `mushpi-server`, `mushpi-client`, `mushpi-grow`, `mushpi-mock`, `mushpi-docs` — are sibling git repos, never vendored here.
 
@@ -10,32 +12,20 @@ On-demand gotchas for editing this layer live in [`REFERENCE.md`](./REFERENCE.md
 
 | Path | What exists there |
 |---|---|
-| `.github/workflows/publish.yml` | CI: on push to `main` or a `v*` tag, checks out the sub-repos, runs the tag⇔manifest guard and the parity check, then builds and pushes **both** images to GHCR via `./.github/actions/build-image` — the hub job, plus `build-and-push-mock` (builds `Dockerfile.mock`) |
-| `.github/workflows/publish-dev.yml` | CI (manual `workflow_dispatch` only): dev/pre-release build of the same image with a required free-form `image_tag` plus an automatic `dev-sha-<short>` tag; skips the manifest guard and parity check; never moves `latest`. **No mock path yet** (see `REFERENCE.md` §Demo stack) |
+| `.github/workflows/publish.yml` | CI: on push to `main` or a `v*` tag, checks out the sub-repos, runs the tag⇔manifest guard and the parity check, then builds and pushes the **hub** image to GHCR via `./.github/actions/build-image` |
+| `.github/workflows/publish-dev.yml` | CI (manual `workflow_dispatch` only): dev/pre-release build of the same image with a required free-form `image_tag` plus an automatic `dev-sha-<short>` tag; skips the manifest guard and parity check; never moves `latest` |
 | `.github/actions/build-image/action.yml` | Composite action — the mechanical build/push (QEMU, Buildx, GHCR login, metadata, build-push) shared by both publish workflows; carries no trigger, guard or tag policy, and an optional `file` input selects the Dockerfile (default `./Dockerfile`, which every hub caller relies on) (see `REFERENCE.md`) |
-| `Dockerfile` | **Hub** image — three-stage build (client → server → runtime); the runtime stage carries the server's native-build toolchain plus the container's mDNS resolver and its NSS client; build context = this repo's root, **or the directory holding it** via `ARG MUSHPI_OPS_PREFIX` (see `REFERENCE.md` §Local demo stack) |
-| `Dockerfile.mock` | **Mock** image — `python:3.12-slim-bookworm` + `uv`, running the mock CLI as UID/GID 1000 so it shares the hub's `/data` ownership; its paired `Dockerfile.mock.dockerignore` **replaces** the hub's `.dockerignore` for this build (see `REFERENCE.md`) |
+| `Dockerfile` | **Hub** image — three-stage build (client → server → runtime); the runtime stage carries the server's native-build toolchain plus the container's mDNS resolver and its NSS client; build context = this repo's root (`ARG MUSHPI_OPS_PREFIX` remains for a parent-context build, but nothing calls it today) |
 | `Dockerfile.dockerignore` | Per-Dockerfile ignore set for the hub build — **replaces** `.dockerignore` for it, so it mirrors that file's rules and adds the parent-context forms (see `REFERENCE.md` §Build-context layout) |
 | `docker-compose.yml` | Hub service — pulls `ghcr.io/mushroom-pi/mushpi` (tag from `MUSHPI_IMAGE_TAG`, default `latest`), runs on the **host network** and persists `MUSHPI_DATA_DIR` (default `./mushpi-data`) at `/data`; the missing `ports:` block is load-bearing (see `REFERENCE.md`) |
-| `docker-compose.demo.base.yml` | **Demo stack service definitions** — profile, mounts, fixed bridge, `depends_on` for both image modes; carries no `image:`/`build:`/host `ports:` and is never run alone |
-| `docker-compose.demo.yml` | Demo **published-image overlay** onto the base — the two `ghcr.io/mushroom-pi` tags, loopback host ports, and the mock's intentional local-clone `build:` fallback; `scripts/demo-stack.sh`'s default mode |
-| `docker-compose.demo-local.yml` | Demo **local-build overlay** onto the base — both images built at context `..` from the sibling working copies, local-only tags `mushpi:demo-local` / `mushpi-mock:demo-local`, overridable host ports; never pushed, never pulled |
 | `docker-compose.override.yml` | Local build toggle — **untracked by design**, absent from clones |
 | `.dockerignore` | Build-context exclusions |
 | `.gitignore` | Ignore-all-then-allowlist; the tracked set is exactly the packaging layer |
 | `LICENSE` | MIT — the packaging layer's licence, matching the application repositories |
-| `.env.example` | Env template (hub vars: `PICO_ANNOUNCE_SECRET` required; optional `MUSHPI_DATA_DIR`, `MUSHPI_IMAGE_TAG`, `APP_HTTPS_ENABLED`, the Swagger docs trio, and the opt-in rate-limit pair), plus a marked **demo section** feeding the demo compose files (image tags, binding, seeding, limiters, and the local-build entry point `scripts/demo-stack-local.sh`) (see `REFERENCE.md` §Demo stack, §Local demo stack) |
+| `.env.example` | Env template (hub vars: `PICO_ANNOUNCE_SECRET` required; optional `MUSHPI_DATA_DIR`, `MUSHPI_IMAGE_TAG`, `APP_HTTPS_ENABLED`, the Swagger docs trio, and the opt-in rate-limit pair) (see `REFERENCE.md` §Rate limiting) |
 | `release.json` | Release manifest: `release`/`server`/`client`/`firmware` SemVer plus integer `api_version` |
 | `scripts/verify-release.sh` | Release-consistency check: tag⇔manifest, manifest⇔committed component versions, spec versions |
 | `scripts/docker-entrypoint.sh` | Container entrypoint — root start, `/data` ownership fix, mDNS resolver start, then privilege drop; detail in `REFERENCE.md` |
-| `scripts/demo-stack.sh` | The demo stack's single entry point — selects the image mode (the internal switch `MUSHPI_DEMO_LOCAL`, set only by `scripts/demo-stack-local.sh` → base + local overlay, default → base + published overlay), resolves the announce secret (file or environment), generates the mock config, runs `docker compose … up`, then delegates the post-start checks to `scripts/demo-verify.sh` |
-| `scripts/demo-stack-local.sh` | One command, no CI, no registry: checks the sibling working copies (`../mushpi-server`, `../mushpi-client`, `../mushpi-mock`) then sets `MUSHPI_DEMO_LOCAL=1` and execs `demo-stack.sh` — all mode logic stays in `demo-stack.sh`, and this wrapper is the only documented way into that mode |
-| `scripts/demo-verify.sh` | The demo profile's post-start assertions in one place — seeded history, roster, batch placement, announce/poll identity, and the demo-volume marker; run mode plus a `--print` mode (see `REFERENCE.md` §Demo stack) |
-| `scripts/demo-reset.sh` | Nightly reset — guard, restart both demo services, wait for health, verify, stamp the status file (see `REFERENCE.md` §Demo reset) |
-| `systemd/mushpi-demo-reset.service` | Example unit running `demo-reset.sh`; `/opt/mushpi-ops` paths are install-time placeholders |
-| `systemd/mushpi-demo-reset.timer` | Example timer — nightly at 03:00 host local time |
-| `research/` | Provider-decision records for the hosted demo's hosting options — research artifacts, not packaging inputs |
-| `deploy/` | Oracle Free Tier hosted-demo bootstrap — cloud-init user-data for the A1 instance, the Caddy TLS front, the `/opt/mushpi/.env` template, and one deploy/rollback script; every file is zero-secret by design (see `REFERENCE.md` §Demo stack) |
 | `DEPLOYMENT.md` | Release-repo notes plus a pointer to the published operator guide (the operator-facing procedures now live on the documentation site, `github.com/mushroom-pi/mushpi-docs`). Human register |
 | `MAINTAINING.md` | Maintainer guide — packaging and the release process (human register) |
 | `README.md` | Repo entry point for self-hosters, pointing at the published guide |
@@ -44,7 +34,7 @@ On-demand gotchas for editing this layer live in [`REFERENCE.md`](./REFERENCE.md
 
 ## How a build gets its siblings
 
-Sub-repos are **never vendored** into this repo. CI materializes them from GitHub at **default-branch HEAD**: `mushpi-server` and `mushpi-client` (the hub build inputs), and now also `mushpi-mock`, which the `build-and-push-mock` job checks out unconditionally as the `Dockerfile.mock` build input. `mushpi-grow` joins them on tag builds for the parity check only — firmware never enters either image. The manual dev workflow is the one exception: it accepts per-run `server_ref`/`client_ref` overrides. Locally, the siblings are transient, gitignored clones inside this repo; the clone recipe is in `REFERENCE.md`. `Dockerfile` `COPY`s from `mushpi-server/` and `mushpi-client/`, and `Dockerfile.mock` from `mushpi-mock/`, so the sibling a given build needs must be present.
+Sub-repos are **never vendored** into this repo. CI materializes them from GitHub at **default-branch HEAD**: `mushpi-server` and `mushpi-client` are the hub build inputs. `mushpi-grow` and `mushpi-mock` join them on tag builds for the parity check only — firmware never enters the image, and the mock is no longer built here. The manual dev workflow is the one exception: it accepts per-run `server_ref`/`client_ref` overrides. Locally, the siblings are transient, gitignored clones inside this repo; the clone recipe is in `REFERENCE.md`. `Dockerfile` `COPY`s from `mushpi-server/` and `mushpi-client/`, so both must be present for a local build.
 
 ## Verification
 
@@ -52,14 +42,8 @@ Run from this repo's root:
 
 - `docker compose -f docker-compose.yml config` — render the base compose file (client-side; no daemon). Re-run with `MUSHPI_DATA_DIR=… MUSHPI_IMAGE_TAG=…` set to verify interpolation.
 - `docker compose config` — render with the local override (build mode).
-- `docker compose -f docker-compose.demo.base.yml -f docker-compose.demo.yml config` — render the **published** demo stack. Re-run with `MUSHPI_DEMO_HOST`/`MUSHPI_DEMO_PORT`, `MUSHPI_IMAGE_TAG` and `MUSHPI_MOCK_IMAGE_TAG` set to verify interpolation.
-- `docker compose -f docker-compose.demo.base.yml -f docker-compose.demo-local.yml config` — render the **local-build** stack; `MUSHPI_DEMO_PORT` verifies the port override, and the mock's 5000-5004 mapping is fixed (edit the overlay if you need different mock ports). The two overlays are mutually exclusive — never render the base alone.
-- `docker compose -f docker-compose.demo.base.yml -f docker-compose.demo-local.yml build mushpi mock` — build both demo images from the working copies beside this repo (not the transient clones inside it); `--progress plain` must show a context of a few MB — hundreds of MB means `Dockerfile.dockerignore` is not being applied.
-- `bash -n scripts/docker-entrypoint.sh scripts/demo-stack.sh scripts/demo-stack-local.sh scripts/demo-verify.sh scripts/demo-reset.sh` — syntax-check the scripts.
-- `bash -n deploy/oci-demo-deploy.sh` — syntax-check the hosted-demo deploy script; it needs no Docker, no cloud credentials and no `.env` to parse.
-- `systemd-analyze verify systemd/mushpi-demo-reset.service systemd/mushpi-demo-reset.timer` — only on a host where the `/opt/mushpi-ops` placeholder paths exist; elsewhere it reports path errors, not defects.
+- `bash -n scripts/docker-entrypoint.sh scripts/verify-release.sh` — syntax-check the shell scripts.
 - `docker build .` — requires the materialized siblings `mushpi-server/` and `mushpi-client/`.
-- `docker build -f Dockerfile.mock .` — requires the materialized sibling `mushpi-mock/`.
 - `bash scripts/verify-release.sh [vX.Y.Z]` — release-consistency check; requires the four siblings present and `jq`.
 - `actionlint .github/workflows/publish.yml .github/workflows/publish-dev.yml` — if actionlint is installed. Do **not** pass a `.github/actions/**/action.yml` to it: actionlint parses explicit file arguments as workflows and cannot lint composite actions.
 
@@ -72,7 +56,6 @@ Run from this repo's root:
 - **`MUSHPI_DATA_DIR` / `MUSHPI_IMAGE_TAG` are compose *interpolation* vars** (read from `.env`/the environment, never passed into the container): the host directory bind-mounted at `/data` (default `./mushpi-data`) and the pulled image tag (default `latest`). The in-container layout (`SQLITE_PATH`, `UPLOAD_DIR`, `LOGS_PATH`) is fixed and must not be repointed.
 - **Dev builds never move `latest`.** `publish-dev.yml` (manual only) publishes a validated free-form tag plus `dev-sha-<short>`; `latest` and strict `vX.Y.Z` inputs are rejected and `flavor: latest=false` blocks auto-emission. `latest` remains owned solely by `publish.yml`.
 - **The shared build action stays dumb.** `.github/actions/build-image` is mechanical build/push only — callers own triggers, guards and tag/flavor policy, and `flavor` is passed explicitly by each caller. Never add ref logic or a release-vs-dev `mode` input to it.
-- **The nightly reset restarts; it never wipes and never pulls.** Clean-start already unlinks the demonstrably disposable database on every demo boot, and both services must restart so the mock re-announces. Never narrow it to the server, never add an external wipe, never add a `pull` (see `REFERENCE.md` §Demo reset).
 - **Register split:** agent rules live here and in `REFERENCE.md`; **operator-facing procedures live on the published documentation site** (`github.com/mushroom-pi/mushpi-docs` — its `deployment/` pages, with remote access under `configuration/`), while what stays in this repo is release-repo notes in `DEPLOYMENT.md` and the packaging and release process in `MAINTAINING.md`. Do not put agent-directed instructions in the human-named docs, and do not restate them here. All three human-facing files (`DEPLOYMENT.md`, `MAINTAINING.md`, `README.md`) are **docs-tier**: the ops agents' edit permission maps exclude them, so an ops agent flags a needed change for the orchestrator to route rather than editing it.
 
 ## ⛔ Data Deletion Prohibition
