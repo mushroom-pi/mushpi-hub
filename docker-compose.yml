@@ -1,6 +1,6 @@
 services:
-  mushpi:
-    image: ghcr.io/mushroom-pi/mushpi:${MUSHPI_IMAGE_TAG:-latest}
+  mushpi-hub:
+    image: ghcr.io/mushroom-pi/mushpi-hub:${MUSHPI_HUB_IMAGE_TAG:-latest}
 
     # Developer source build (build context = this repository root; the sibling
     # sub-repos are materialized as transient clones — see REFERENCE.md — so a
@@ -27,8 +27,9 @@ services:
 
     volumes:
       # Persists SQLite DB + uploaded images + logs across restarts/reimages.
-      # Host directory is MUSHPI_DATA_DIR (default ./mushpi-data next to this
-      # compose file). The container's entrypoint creates it if missing and
+      # Host directory is MUSHPI_HUB_DATA_DIR (default ./mushpi-data next to
+      # this compose file — the default path is deliberately not named after
+      # the variable). The container's entrypoint creates it if missing and
       # ensures it is owned by UID 1000 — no manual chown is needed for a
       # first run.
-      - "${MUSHPI_DATA_DIR:-./mushpi-data}:/data"
+      - "${MUSHPI_HUB_DATA_DIR:-./mushpi-data}:/data"

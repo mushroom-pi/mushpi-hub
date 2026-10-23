@@ -24,8 +24,8 @@ fail() {
 
 remedy_nonroot() {
   echo "Fix it on the HOST, then restart the container:" >&2
-  echo "    sudo chown -R ${UID_NOW}:${GID_NOW} <MUSHPI_DATA_DIR>" >&2
-  echo "(The host directory is whatever MUSHPI_DATA_DIR points at, default ./mushpi-data" >&2
+  echo "    sudo chown -R ${UID_NOW}:${GID_NOW} <MUSHPI_HUB_DATA_DIR>" >&2
+  echo "(The host directory is whatever MUSHPI_HUB_DATA_DIR points at, default ./mushpi-data" >&2
   echo "beside the compose file. The Docker daemon creates a missing bind-mount source" >&2
   echo "directory as root, which this container cannot write into.)" >&2
 }
@@ -124,8 +124,8 @@ if [ "$UID_NOW" -eq 0 ]; then
              "This usually means the filesystem maps root to an unprivileged user" \
              "(NFS root_squash) or does not allow chown. Pre-create the directory" \
              "on the host as UID ${APP_UID} / GID ${APP_GID} and restart:" \
-             "    sudo mkdir -p <MUSHPI_DATA_DIR>" \
-             "    sudo chown -R ${APP_UID}:${APP_GID} <MUSHPI_DATA_DIR>"
+             "    sudo mkdir -p <MUSHPI_HUB_DATA_DIR>" \
+             "    sudo chown -R ${APP_UID}:${APP_GID} <MUSHPI_HUB_DATA_DIR>"
       fi
     fi
   done
@@ -134,8 +134,8 @@ if [ "$UID_NOW" -eq 0 ]; then
     fail "$DATA_ROOT is not writable by ${APP_USER} (UID ${APP_UID})." \
          "The directory could not be made writable for the application user." \
          "Pre-create it on the host as UID ${APP_UID} / GID ${APP_GID} and restart:" \
-         "    sudo mkdir -p <MUSHPI_DATA_DIR>" \
-         "    sudo chown -R ${APP_UID}:${APP_GID} <MUSHPI_DATA_DIR>"
+         "    sudo mkdir -p <MUSHPI_HUB_DATA_DIR>" \
+         "    sudo chown -R ${APP_UID}:${APP_GID} <MUSHPI_HUB_DATA_DIR>"
   fi
 
   # After the /data ownership work (so a repair failure still exits 1), before

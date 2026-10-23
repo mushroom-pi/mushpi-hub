@@ -11,11 +11,12 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  # The image is named for the product, deliberately decoupled from this repo's
-  # name: the artifact ships the server API + the built dashboard, so it is
-  # published as ghcr.io/mushroom-pi/mushpi rather than after the packaging repo.
-  # The owner is interpolated so an org rename cannot break the name.
-  IMAGE_NAME: ${{ github.repository_owner }}/mushpi
+  # The image is named after this repo, because this repo is the entry point
+  # that assembles mushpi-server + mushpi-client into the deployable hub: the
+  # artifact ships the server API plus the built dashboard, published as
+  # ghcr.io/mushroom-pi/mushpi-hub. The owner is interpolated so an org rename
+  # cannot break the name.
+  IMAGE_NAME: ${{ github.repository_owner }}/mushpi-hub
 
 jobs:
   build-and-push:

@@ -10,8 +10,8 @@ name: Build Dev Image
 on:
   workflow_dispatch:
     inputs:
-      ops_ref:
-        description: 'mushpi-ops ref / branch / SHA to build'
+      hub_ref:
+        description: 'mushpi-hub ref / branch / SHA to build'
         type: string
         default: main
       server_ref:
@@ -37,8 +37,8 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  # Same product-named image as publish.yml — see AGENTS.md conventions.
-  IMAGE_NAME: ${{ github.repository_owner }}/mushpi
+  # Same repo-named hub image as publish.yml — see AGENTS.md conventions.
+  IMAGE_NAME: ${{ github.repository_owner }}/mushpi-hub
 
 jobs:
   build-dev:
@@ -47,7 +47,7 @@ jobs:
       - name: Checkout this repository (Dockerfile, compose, CI)
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ops_ref }}
+          ref: ${{ inputs.hub_ref }}
 
       - name: Checkout mushpi-server into ./mushpi-server
         uses: actions/checkout@v7
@@ -106,6 +106,6 @@ jobs:
           flavor: latest=false
           tags: |
             type=raw,value=${{ inputs.image_tag }}
-            # Traceability tag for the exact ops commit: dev-sha-<short sha>
+            # Traceability tag for the exact mushpi-hub commit: dev-sha-<short sha>
             # (metadata-action concatenates prefix + short SHA verbatim).
             type=sha,prefix=dev-sha-

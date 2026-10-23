@@ -15,7 +15,7 @@ inputs:
     description: Container registry to push to (e.g. ghcr.io)
     required: true
   image_name:
-    description: Image name within the registry (e.g. owner/mushpi)
+    description: Image name within the registry (e.g. owner/mushpi-hub)
     required: true
   file:
     description: >
