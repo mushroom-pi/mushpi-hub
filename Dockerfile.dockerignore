@@ -6,7 +6,7 @@
 #   - this repo's root — CI and release builds, where the patterns below are
 #     exactly `.dockerignore`'s, so those builds are unchanged by this file existing;
 #   - the parent workspace directory, where this repo is a subdirectory — the local
-#     demo build in the private mushpi-demo-infra repo is its only caller, pointing
+#     demo build in the private mushpi-demo repo is its only caller, pointing
 #     compose at this file from that context. The final block holds the nested forms
 #     that only matter in that shape, and is inert in a CI checkout of this repo alone.
 # Everything below is excluded from the context upload; nothing a `COPY` in the

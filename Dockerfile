@@ -9,7 +9,7 @@
 # at all — they pull the published image.
 #
 # The context may also be the DIRECTORY HOLDING this repo — the shape the local
-# demo build uses: the private mushpi-demo-infra repo's docker-compose.demo-
+# demo build uses: the private mushpi-demo repo's docker-compose.demo-
 # local.yml points the hub image's build at this file from the workspace root,
 # where the sibling repos are the developer's own working copies. This repo's
 # own files are then one level down, so every COPY that reads them goes through
@@ -50,7 +50,7 @@ COPY mushpi-server/spec/openapi.json ./openapi.json
 # Release-bundle manifest (repo root) → baked into the SPA as __APP_RELEASE_VERSION__.
 # MUSHPI_HUB_PREFIX is this repo's own path inside the build context: `.` when the
 # context is this repo's root (CI and release builds); the local demo build in the
-# private mushpi-demo-infra repo passes `mushpi-hub` with a parent-directory context.
+# private mushpi-demo repo passes `mushpi-hub` with a parent-directory context.
 ARG MUSHPI_HUB_PREFIX=.
 COPY ${MUSHPI_HUB_PREFIX}/release.json /app/release.json
 RUN yarn gen:client && yarn gen:schemas
