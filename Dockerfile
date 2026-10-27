@@ -207,7 +207,16 @@ EXPOSE 3000
 
 # Liveness probe (Node built-in fetch — no curl/wget in -slim). APP_SECRET is
 # optional and unset by default, so /ping needs no Authorization header.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+#
+# start-period is the cold-start initialization window, not probe flakiness:
+# the demo profile (NODE_ENV=demo) seeds its full reading history in an awaited
+# onApplicationBootstrap hook and does not answer /ping until that finishes —
+# ~180s on the demo host. Failures inside start-period never count toward
+# retries, so this is the correct lever: at 30s the first counted failures
+# landed at 30/60/90s and a container still initializing was marked unhealthy
+# ~90s in. 300s gives seeding roughly 1.7x its measured worst case before any
+# failure counts.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=300s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3000/ping').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 # dumb-init is PID 1: it reaps the daemonized avahi resolver (which double-forks
