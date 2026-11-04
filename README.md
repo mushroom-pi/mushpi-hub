@@ -32,7 +32,7 @@ A demo environment — the full system running against simulated Pico units, wit
 | `.env.example` | Environment template (`PICO_ANNOUNCE_SECRET` plus optional overrides) |
 | `release.json` | Release manifest — the component versions in this bundle |
 | `scripts/verify-release.sh` | Checks the manifest against the committed component versions |
-| `.github/workflows/publish.yml` | CI: builds and pushes the hub image on `main` and `v*` tags |
+| `.github/workflows/publish.yml` | CI: builds and pushes the hub image on `v*` tags only (a merge to `main` publishes nothing) |
 | `DEPLOYMENT.md` | Release-repo notes for operators — the full deployment guide is on the documentation site |
 | `MAINTAINING.md` | How to build and release it (maintainers) |
 
