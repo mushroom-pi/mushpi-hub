@@ -81,7 +81,7 @@ jobs:
             exit 1
           fi
           if [ "$TAG" = "latest" ]; then
-            echo "::error::\"latest\" is reserved for publish.yml (push to main / v* tags). A dev build must never move it."
+            echo "::error::\"latest\" is reserved for publish.yml (push to v* tags only — a merge to main publishes nothing). A dev build must never move it."
             exit 1
           fi
           if printf '%s' "$TAG" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+$'; then
