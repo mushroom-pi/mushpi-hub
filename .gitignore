@@ -3,10 +3,12 @@
 *
 
 !.gitignore
+!LICENSE
 !AGENTS.md
 !REFERENCE.md
 !README.md
 !Dockerfile
+!Dockerfile.dockerignore
 !docker-compose.yml
 !.dockerignore
 !.env.example
@@ -18,6 +20,7 @@
 !.github/
 !.github/**
 !.github/workflows/**
+!.github/actions/**
 
 # Local build toggle — deliberately untracked: self-hosters' clones never
 # contain it (they pull the published image); maintainers keep a local copy
@@ -36,8 +39,8 @@ mushpi-server/
 mushpi-client/
 mushpi-grow/
 mushpi-mock/
-mushpi-docs/
 
 # Runtime data on machines that run the stack from this directory
-# (SQLite DB, uploaded images, logs).
-data/
+# (SQLite DB, uploaded images, logs). Also covered by the blanket `*`
+# ignore above — this explicit rule documents the default's intent.
+mushpi-data/

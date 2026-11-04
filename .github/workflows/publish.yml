@@ -2,9 +2,7 @@ name: Build & Publish Image
 
 on:
   push:
-    branches: [main]
     tags: ['v*']
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -12,28 +10,45 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  # This workflow lives in the mushroom-pi/mushpi-ops orchestration repo, so this
-  # resolves to ghcr.io/mushroom-pi/mushpi-ops (the published image name).
-  IMAGE_NAME: ${{ github.repository }}
+  # The image is named after this repo, because this repo is the entry point
+  # that assembles mushpi-server + mushpi-client into the deployable hub: the
+  # artifact ships the server API plus the built dashboard, published as
+  # ghcr.io/mushroom-pi/mushpi-hub. The owner is interpolated so an org rename
+  # cannot break the name.
+  IMAGE_NAME: ${{ github.repository_owner }}/mushpi-hub
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout this repository (orchestration + Docker + CI)
-        uses: actions/checkout@v4
+      - name: Checkout this repository (Dockerfile, compose, CI, release manifest)
+        uses: actions/checkout@v7
 
       - name: Checkout mushpi-server into ./mushpi-server
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ github.repository_owner }}/mushpi-server
           path: mushpi-server
 
       - name: Checkout mushpi-client into ./mushpi-client
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ github.repository_owner }}/mushpi-client
           path: mushpi-client
+
+      - name: Checkout mushpi-grow into ./mushpi-grow
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository_owner }}/mushpi-grow
+          path: mushpi-grow
+
+      - name: Checkout mushpi-mock into ./mushpi-mock
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository_owner }}/mushpi-mock
+          path: mushpi-mock
 
       # ── Release-manifest guard. Runs only on v* tag pushes; fails before
       # anything reaches GHCR if the tag doesn't match release.json at the
@@ -68,40 +83,37 @@ jobs:
           fi
           echo "release.json OK: v${tag_ver} = ${srv_act}+${cli_act}, firmware $(jq -r .firmware release.json), api_version $(jq -r .api_version release.json)"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      # ── Bundle-parity check. Runs only on v* tag pushes, after all four
+      # sub-repos are checked out. `verify-release.sh` cross-checks the
+      # manifest against each sub-repo's committed version (server/client
+      # package.json, grow `_SOFTWARE_VERSION` + spec, mock VERSION), so it
+      # needs the grow and mock checkouts above.
+      - name: Verify bundle parity
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: bash scripts/verify-release.sh "${GITHUB_REF_NAME}"
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      # Delegates the mechanical build/push to the shared composite action
+      # (.github/actions/build-image). This workflow keeps full ownership of
+      # the release tag policy: the tags/flavor blocks below are the whole
+      # story of what `latest` means and when it moves.
+      - name: Build and push image
+        uses: ./.github/actions/build-image
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          image_name: ${{ env.IMAGE_NAME }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          push: 'true'
+          # Explicit is identical to metadata-action's default flavor
+          # (`latest=auto`): a `v*` tag push still moves `latest` on its own.
+          flavor: latest=auto
+          # `latest` is bound to `main` by ref, not by the repository's
+          # default-branch setting. This repo was born with an unborn `main`,
+          # and GitHub makes the first branch pushed the default — so a
+          # default-branch-based gate could silently stop applying `latest` on
+          # `main` pushes. The explicit ref test cannot be disabled that way.
           tags: |
             type=ref,event=branch
             type=ref,event=tag
             type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          build-args: |
-            VITE_API_BASE_URL=/
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max

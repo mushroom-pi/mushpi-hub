@@ -1,0 +1,80 @@
+name: Build and push image
+description: >
+  Mechanical GHCR build/push for the shared Mushroom Pi image (QEMU, Buildx,
+  login, metadata, build-push). Callers own triggers, guards and tag policy.
+
+# Deliberately dumb: no branch/tag/ref logic and no release-vs-dev mode input
+# live here. Each caller keeps its own triggers, guards and tag/flavor policy,
+# so the policy stays explicit at every call site (a dev build can never move
+# `latest` because its caller, not this action, decides that).
+# The `secrets` context is not reliably available inside composite actions, so
+# the registry token is passed in as the `token` input by each caller.
+
+inputs:
+  registry:
+    description: Container registry to push to (e.g. ghcr.io)
+    required: true
+  image_name:
+    description: Image name within the registry (e.g. owner/mushpi-hub)
+    required: true
+  file:
+    description: >
+      Path to the Dockerfile within the build context. Defaults to ./Dockerfile
+      so the hub callers — which omit it entirely — build exactly as before; a
+      caller publishing a different image from the same context passes it
+      explicitly (e.g. a second Dockerfile in that context). Mechanical only: which file to
+      compile is not a ref or tag policy, and stays the caller's decision.
+    required: false
+    default: ./Dockerfile
+  token:
+    description: Registry login token — pass secrets.GITHUB_TOKEN from the caller
+    required: true
+  push:
+    description: Push the built image ("true" or "false"; compared to 'true' below)
+    required: true
+  flavor:
+    description: >
+      metadata-action flavor, passed explicitly by every caller so it can never
+      be silently defaulted (e.g. latest=auto or latest=false)
+    required: true
+  tags:
+    description: metadata-action tags block (multi-line; the caller's tag policy)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v4
+
+    - name: Log in to GHCR
+      uses: docker/login-action@v4
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ github.actor }}
+        password: ${{ inputs.token }}
+
+    - name: Docker metadata
+      id: meta
+      uses: docker/metadata-action@v6
+      with:
+        images: ${{ inputs.registry }}/${{ inputs.image_name }}
+        flavor: ${{ inputs.flavor }}
+        tags: ${{ inputs.tags }}
+
+    - name: Build and push
+      uses: docker/build-push-action@v7
+      with:
+        context: .
+        file: ${{ inputs.file }}
+        push: ${{ inputs.push == 'true' }}
+        platforms: linux/amd64,linux/arm64
+        build-args: |
+          VITE_API_BASE_URL=/
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max

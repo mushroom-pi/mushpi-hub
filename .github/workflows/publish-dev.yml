@@ -1,0 +1,111 @@
+name: Build Dev Image
+
+# Manual-only dev / pre-release builds of the same image with a free-form tag.
+# Deliberately NOT a release path: it never moves `latest` (flavor
+# `latest=false` + a validated tag input that rejects `latest` and strict
+# vX.Y.Z), and it skips the release-manifest guard and bundle-parity check —
+# a dev build is not a bundle release. See REFERENCE.md for the workflow
+# inputs, tag rules, and the pre-release convention.
+
+on:
+  workflow_dispatch:
+    inputs:
+      hub_ref:
+        description: 'mushpi-hub ref / branch / SHA to build'
+        type: string
+        default: main
+      server_ref:
+        description: 'mushpi-server ref (blank = its default branch)'
+        type: string
+        default: ''
+      client_ref:
+        description: 'mushpi-client ref (blank = its default branch)'
+        type: string
+        default: ''
+      image_tag:
+        description: 'Free-form image tag (e.g. pi-test, 0.9.0-rc1). "latest" and vX.Y.Z are rejected.'
+        type: string
+        required: true
+      push:
+        description: 'Push the built image to GHCR'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  # Same repo-named hub image as publish.yml — see AGENTS.md conventions.
+  IMAGE_NAME: ${{ github.repository_owner }}/mushpi-hub
+
+jobs:
+  build-dev:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repository (Dockerfile, compose, CI)
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.hub_ref }}
+
+      - name: Checkout mushpi-server into ./mushpi-server
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository_owner }}/mushpi-server
+          path: mushpi-server
+          # Blank ref = the repository's default branch (actions/checkout
+          # falls back to default-branch HEAD when ref is empty).
+          ref: ${{ inputs.server_ref }}
+
+      - name: Checkout mushpi-client into ./mushpi-client
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository_owner }}/mushpi-client
+          path: mushpi-client
+          ref: ${{ inputs.client_ref }}
+
+      # No release-manifest guard and no scripts/verify-release.sh here —
+      # dev builds intentionally skip bundle parity (see workflow header).
+      - name: Validate image tag
+        env:
+          TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TAG" ]; then
+            echo "::error::image_tag must not be empty"
+            exit 1
+          fi
+          if ! printf '%s' "$TAG" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$'; then
+            echo "::error::\"$TAG\" is not a valid Docker tag (alphanumerics with . _ -, must start alphanumerically/underscore, max 128 chars)"
+            exit 1
+          fi
+          if [ "$TAG" = "latest" ]; then
+            echo "::error::\"latest\" is reserved for publish.yml (push to v* tags only — a merge to main publishes nothing). A dev build must never move it."
+            exit 1
+          fi
+          if printf '%s' "$TAG" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::\"$TAG\" looks like a release version. Releases are cut by pushing a vX.Y.Z git tag (publish.yml); here use a dev or pre-release form (pi-test, 0.9.0-rc1)."
+            exit 1
+          fi
+          echo "image_tag OK: $TAG"
+
+      # Delegates the mechanical build/push to the shared composite action
+      # (.github/actions/build-image). This workflow keeps full ownership of
+      # the dev tag policy below — the flavor + validation step above are what
+      # guarantee this path can never move `latest`.
+      - name: Build and push image
+        uses: ./.github/actions/build-image
+        with:
+          registry: ${{ env.REGISTRY }}
+          image_name: ${{ env.IMAGE_NAME }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          push: ${{ inputs.push }}
+          # Belt-and-braces against moving `latest`: never auto-emit it, and
+          # the validate step above already rejects latest/vX.Y.Z inputs.
+          flavor: latest=false
+          tags: |
+            type=raw,value=${{ inputs.image_tag }}
+            # Traceability tag for the exact mushpi-hub commit: dev-sha-<short sha>
+            # (metadata-action concatenates prefix + short SHA verbatim).
+            type=sha,prefix=dev-sha-
