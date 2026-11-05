@@ -2,7 +2,7 @@
 
 This repo is the **release/packaging layer** for the Mushroom Pi system. It owns the container build, the compose service definitions, the release manifest, and the publish workflow. It publishes one image: `ghcr.io/mushroom-pi/mushpi-hub` — the server API and the built React dashboard on one port, the **hub** image, named after this repo.
 
-The demo environment — the demo compose stack, the mock image and the hosted deployment — is **not** built here. It lives in the private `mushpi-demo` repo, which is where the demo issues and the deployment records belong.
+The demo environment — the demo compose stack (which pulls the hub and mock images by tag) and the hosted deployment — is **not** built here. It lives in the private `mushpi-demo` repo, which is where the demo issues and the deployment records belong. The mock image is published from `mushpi-mock` on its own tag, not from here.
 
 It is **not a runtime tier** and contains no application code. The orchestration root (its sibling directory) owns the agent definitions, the full-stack architecture context, and the cross-repo contracts. The sub-repos — `mushpi-server`, `mushpi-client`, `mushpi-grow`, `mushpi-mock`, `mushpi-docs` — are sibling git repos, never vendored here.
 

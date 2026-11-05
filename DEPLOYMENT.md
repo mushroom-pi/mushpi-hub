@@ -28,4 +28,4 @@ Create `.env` from `.env.example`; a few optional variables shape the run:
 
 > **Migrating from `./data`.** If you already have a populated `./data` directory from an earlier run, the new default (`./mushpi-data`) points somewhere else, so the stack would start with an empty data directory. Either stop the stack with `docker compose down` (**do not** use `-v`), rename the folder (`mv data mushpi-data`), and start it again — or keep the old folder where it is by setting `MUSHPI_HUB_DATA_DIR=./data` in `.env`. Nothing has been released yet, so this only affects local development checkouts.
 
-The demo environment — the demo stack, the mock image and its hosted deployment — is out of scope here: it lives in the private `mushroom-pi/mushpi-demo` repo, and this repo ships only the hub image.
+The demo environment — the demo stack and its hosted deployment — is out of scope here: it lives in the private `mushroom-pi/mushpi-demo` repo (which consumes the mock image published by `mushpi-mock`), and this repo ships only the hub image.
