@@ -37,12 +37,13 @@ Exactly **one other version axis** exists alongside the component versions: `api
 | Firmware (grow) | `_SOFTWARE_VERSION` | `mushpi-grow/app/state.py` |
 | Server | `version` | `mushpi-server/package.json` |
 | Client | `version` | `mushpi-client/package.json` |
-| Mock | `version` + `VERSION` + `_SOFTWARE_VERSION` (three fields, one value) | `mushpi-mock/pyproject.toml`, `src/mushpi_mock/VERSION`, `src/mushpi_mock/state.py` |
+| Mock — own release version | `version` + `VERSION` (two fields, one value) | `mushpi-mock/pyproject.toml`, `src/mushpi_mock/VERSION` |
+| Mock — simulated firmware version | `_SOFTWARE_VERSION` | `mushpi-mock/src/mushpi_mock/state.py` |
 | Hub bundle | `release` field + git tag `vX.Y.Z` | `mushpi-hub/release.json` |
 
-**Single source of truth** for the mock's version is the firmware: `mushpi-grow/app/state.py::_SOFTWARE_VERSION`. Grow lands first in a release, and the mock mirrors that value — `scripts/verify-release.sh` asserts the firmware⇔mock agreement. The server and client carry their own versions, each bumped when that component changes; they do not mirror the firmware's.
+**The mock carries two version identities, and they are deliberately not tied together.** Its **own release version** (`pyproject.toml` `version` and `src/mushpi_mock/VERSION`) tracks its packaging and image tag, and bumps when the mock itself changes. The **firmware version it simulates** (`state.py::_SOFTWARE_VERSION`) must always equal the real firmware's — `mushpi-grow/app/state.py::_SOFTWARE_VERSION` — because that is the value a unit announces and the server displays. The mock's own version **may lead** the firmware version it simulates; the two are not required to be equal. `scripts/verify-release.sh` asserts `firmware` against grow's `_SOFTWARE_VERSION` and `mock` against the mock's `VERSION` — never against each other. The server and client carry their own versions, each bumped when that component changes; they do not mirror the firmware's.
 
-The **mock carries one version identity equal to the firmware's** — no separately-tracked tool SemVer. Its own `pyproject.toml` `version`, `src/mushpi_mock/VERSION` and `state.py::_SOFTWARE_VERSION` all move together to grow's `_SOFTWARE_VERSION`, and move only when the firmware moves, because the mock impersonates firmware and its release version must equal what it represents. `mushpi-mock/scripts/check-version-alignment.sh` enforces the grow↔mock agreement (a firmware three-way check plus an API two-way check); the older "independent mock own-service SemVer" notion is retired.
+`mushpi-mock/scripts/check-version-alignment.sh` enforces the two-identity rule without ever comparing the identities: it checks that the simulated firmware version equals grow's firmware version, that the mock's own version fields agree with each other, and that the API contract version matches — no comparison between the two identity types.
 
 **Strict SemVer.** Every component version — and the release tag — is strict `MAJOR.MINOR.PATCH` — no `-rc`, `-alpha`, or `+build` metadata in any component version or tag. Pre-release suffixes are deliberately out of scope: `-alpha`/`-rc` identifiers would force the manifest schema, the CI guard regex and image tagging to accept suffixes, for no real gain with a single tester. Prototype status is conveyed in prose (a descriptive label), not in the version string. This strict rule is enforced at runtime in one place: the `firmware_version` a unit reports on announce must be strict SemVer, or the server rejects the announce with **422** — which also breaks the server's IP-refresh fallback.
 
@@ -52,26 +53,28 @@ The **mock carries one version identity equal to the firmware's** — no separat
 
 ### The release manifest
 
-`release.json` records the release number alongside the version of each of the four shipping artifacts plus the contract generation, so a release is auditable as a tested-together set. It is a **5-field object, all fields required**.
+`release.json` records the release number alongside the version of each of the five shipping artifacts plus the contract generation, so a release is auditable as a tested-together set. It is a **6-field object, all fields required**.
 
 | Field | Type | Required | Semantics |
 |-------|------|----------|-----------|
 | `release` | string (`MAJOR.MINOR.PATCH`) | ✅ required | The release number. Equals the git tag `vX.Y.Z` **without** the `v`. |
 | `server` | string (`MAJOR.MINOR.PATCH`) | ✅ required | The `mushpi-server` `package.json` version this release ships. |
 | `client` | string (`MAJOR.MINOR.PATCH`) | ✅ required | The `mushpi-client` `package.json` version this release ships. |
-| `firmware` | string (`MAJOR.MINOR.PATCH`) | ✅ required | The `mushpi-grow` `_SOFTWARE_VERSION` this bundle ships. |
+| `firmware` | string (`MAJOR.MINOR.PATCH`) | ✅ required | The `mushpi-grow` `_SOFTWARE_VERSION` this bundle ships — the firmware the bundle was tested against. |
+| `mock` | string (`MAJOR.MINOR.PATCH`) | ✅ required | The `mushpi-mock` own release version (`src/mushpi_mock/VERSION`) this bundle ships — the mock tool, independent of the firmware it simulates. |
 | `api_version` | integer (≥ 1) | ✅ required | The Pico↔Server API-contract generation this bundle targets (see *api_version* below). |
 
 **Rules:**
 
-- The four SemVer fields must be **strings** and `api_version` must be an **integer ≥ 1** — no numeric coercion, no `v` prefix inside the JSON. A component untouched by the release keeps its previous version, so the fields need not all be equal.
+- The five SemVer fields must be **strings** and `api_version` must be an **integer ≥ 1** — no numeric coercion, no `v` prefix inside the JSON. A component untouched by the release keeps its previous version, so the fields need not all be equal.
 - The `release` field **must equal** the git tag version (tag `v0.9.0` ⇔ `release: "0.9.0"`), and the component fields must equal the versions those components ship in the release.
-- `firmware` records the firmware this bundle ships — it is not bundled into any container image (Pico units are flashed over USB), so the manifest is the only place the release ties firmware to the shipped server+client pair.
+- `firmware` and `mock` are **independent**: `firmware` records the firmware the bundle ships and `mock` records the mock's own release version. The mock's own version may lead the firmware version it simulates, so the two fields need not be equal.
+- `firmware` is not bundled into any container image (Pico units are flashed over USB), so the manifest is the only place the release ties firmware to the shipped server+client pair.
 - The file **persists between releases** — it is rewritten per release commit — and is committed at the release commit.
 
 > **`api_version` source of truth.** The canonical contract artifact is the hand-authored grow spec (`mushpi-grow/spec/openapi.yaml`), which the firmware implements and the mock mirrors — they must agree. `api_version` is sourced from that grow spec/firmware — **never** from the server's URI `API_VERSION` (`mushpi-server/src/common/utils/api-version.ts`), which is an unrelated contract (see *api_version* below). The two `1`s coincide today but are distinct numbers (integer vs string) that may diverge. The server stores this integer per unit (from announce/poll) **and judges it against the supported range**, flagging each unit `compatible`, `incompatible`, or `unknown` — see *Judging the stored value* below.
 
-**Example** — a release that moved the release number and the server only; the unchanged firmware and client keep their previous versions:
+**Example** — a release that moved the release number and the server only; the unchanged client and firmware keep their previous versions, and the mock's own version leads the firmware version it simulates:
 
 ```json
 {
@@ -79,6 +82,7 @@ The **mock carries one version identity equal to the firmware's** — no separat
   "server": "0.10.0",
   "client": "0.9.0",
   "firmware": "0.9.0",
+  "mock": "0.9.1",
   "api_version": 1
 }
 ```
@@ -159,17 +163,17 @@ The asymmetry is the entire reason `api_version` exists *only* for the Pico↔Se
 
 ### The mock and `GET /version`
 
-`mushpi-mock` mirrors the Pico firmware's REST API for development, demos, and testing — and because it impersonates firmware, it carries **one version identity equal to the firmware's** (see *Component versions* above): its own `pyproject.toml` `version`, `src/mushpi_mock/VERSION` and `state.py::_SOFTWARE_VERSION` all equal grow's `_SOFTWARE_VERSION` and move together. There is no separately-tracked mock tool SemVer.
+`mushpi-mock` mirrors the Pico firmware's REST API for development, demos, and testing — and because it impersonates firmware, it carries **two version identities** (see *Component versions* above): its **own release version** (`pyproject.toml` `version` and `src/mushpi_mock/VERSION`) tracks its packaging and image tag, while the **firmware version it simulates** (`state.py::_SOFTWARE_VERSION`) always equals grow's `_SOFTWARE_VERSION`. The two are independent, and the mock's own version may lead the firmware version it simulates.
 
-The mock-only `GET /version` endpoint returns three fields — `mock_version`, `represented_firmware_version`, `represented_api_version` — because they answer different questions. `mock_version` and `represented_firmware_version` now always carry the same value; the fields stay separate so a demo can distinguish "which tool is this" from "which firmware does it emulate".
+The mock-only `GET /version` endpoint returns three fields — `mock_version`, `represented_firmware_version`, `represented_api_version` — because they answer different questions. `mock_version` is the mock's own release version and `represented_firmware_version` is the firmware version it simulates; they may differ when the mock ships ahead of the firmware.
 
 - The mock **mirrors** `firmware_version` and `api_version` in both the announce payload and `GET /`, matching the grow spec's `AnnouncePayload` schema exactly (11 keys, order-matched). The mock reads the grow spec as canonical and is not permitted to drift.
 - **When `api_version` bumps** (a breaking Pico contract change), the mock's `state.py::_API_VERSION` must be updated in the same pass as grow — an out-of-date mock would report the stale `api_version` and silently mask a real incompatibility during dev/demo.
-- The alignment check (`scripts/check-version-alignment.sh`, see `mushpi-mock/AGENTS.md`) runs **two** checks: firmware (grow `_SOFTWARE_VERSION` vs both `src/mushpi_mock/VERSION` and `state.py::_SOFTWARE_VERSION`) and API (grow `_API_VERSION` vs `state.py::_API_VERSION`) — so grow⇔mock `api_version` drift is caught too, and the script enforces the grow↔mock agreement that the mock's version identity relies on.
+- The alignment check (`scripts/check-version-alignment.sh`, see `mushpi-mock/AGENTS.md`) runs **three** checks — simulated firmware (grow `_SOFTWARE_VERSION` vs `state.py::_SOFTWARE_VERSION`), the mock's own version (`VERSION` vs `pyproject.toml` `version`), and API (grow `_API_VERSION` vs `state.py::_API_VERSION`) — with no comparison between the two identity types.
 
 ### The mock image is published separately
 
-The mock image `ghcr.io/mushroom-pi/mushpi-mock` is published by **`mushpi-mock`'s own** `publish.yml`, on a `v*` tag pushed to that repo (or a manual dispatch naming an existing tag) — not by this repo, and not by `mushpi-demo`. The two image tags are **independent and generally differ**: `MUSHPI_HUB_IMAGE_TAG` tracks a hub release (server + dashboard), while `MUSHPI_MOCK_IMAGE_TAG` tracks the **last mock release** — the mock's own tag, which carries the firmware's version and moves only when the firmware's version does — and a release that does not move the firmware's version leaves the mock tag alone. The workflow refuses a tag that does not equal `mushpi-mock/src/mushpi_mock/VERSION`; the published demo consumes the mock image **anonymously**, so the package must be made public on GHCR once, by hand (CI publishes it private).
+The mock image `ghcr.io/mushroom-pi/mushpi-mock` is published by **`mushpi-mock`'s own** `publish.yml`, on a `v*` tag pushed to that repo (or a manual dispatch naming an existing tag) — not by this repo, and not by `mushpi-demo`. The two image tags are **independent and generally differ**: `MUSHPI_HUB_IMAGE_TAG` tracks a hub release (server + dashboard), while `MUSHPI_MOCK_IMAGE_TAG` tracks the **last mock release** — the mock's own tag, which carries the mock's own version (`src/mushpi_mock/VERSION`) and moves when the mock's packaging changes, independent of the firmware version it simulates. The workflow refuses a tag that does not equal `mushpi-mock/src/mushpi_mock/VERSION`; the published demo consumes the mock image **anonymously**, so the package must be made public on GHCR once, by hand (CI publishes it private).
 
 ## Release Workflow — Cutting a vX.Y.Z Bundle
 
@@ -183,7 +187,7 @@ The mock image `ghcr.io/mushroom-pi/mushpi-mock` is published by **`mushpi-mock`
 
 ### 1. What a release is
 
-A release is a **git tag `vX.Y.Z`** on this repo (`mushpi-hub`) plus a **committed `release.json` manifest at this repo's root**, kept in lockstep. The statement it makes — "these specific component versions are tested to work together" — and the 5-field manifest schema are normative in **Version & Release Semantics** above; tag ⇔ manifest equality is enforced twice (subsection 4's consistency rule, via the local pre-tag check and the CI manifest guard below).
+A release is a **git tag `vX.Y.Z`** on this repo (`mushpi-hub`) plus a **committed `release.json` manifest at this repo's root**, kept in lockstep. The statement it makes — "these specific component versions are tested to work together" — and the 6-field manifest schema are normative in **Version & Release Semantics** above; tag ⇔ manifest equality is enforced twice (subsection 4's consistency rule, via the local pre-tag check and the CI manifest guard below).
 
 > **CI status note:** `publish.yml` lives in this repo and triggers on **`v*` tag pushes only**. A merge to `main` publishes nothing — no image, no GitHub Release, no git tag, no `release.json` change. The image builds and publishes only when the `v*` tag is pushed, after the manifest guard and parity check pass.
 
@@ -226,7 +230,7 @@ All paths are relative to this repo's root unless a directory is given.
 1. **Choose the component versions** — only for the components that changed, each by its own meaning — per **Version & Release Semantics** above, and decide whether the Pico↔Server contract broke (see *api_version*), which determines `api_version`. Components that did not change keep their previous versions.
 2. **Cut each repo's release commit on `dev`** as the final commit of that repo's cycle:
    - **grow** — bump `_SOFTWARE_VERSION` if the firmware changed (grow lands first in the merge order, subsection 3); if the contract broke, also bump `_API_VERSION` and update the spec `info.version`.
-   - **mock** — mirror grow: bump `pyproject.toml` `version`, `src/mushpi_mock/VERSION` and `state.py::_SOFTWARE_VERSION` (and `_API_VERSION` if it moved), then `uv lock`.
+   - **mock** — bump the mock's own version (`pyproject.toml` `version` and `src/mushpi_mock/VERSION`) only if the mock itself changed, then `uv lock`; mirror `state.py::_SOFTWARE_VERSION` only if grow's firmware version moved (and `_API_VERSION` if it moved). The mock's own version may lead the firmware version it simulates.
    - **server** — bump `package.json` `version`, then regenerate `spec/` via `yarn spec:all`.
    - **client** — bump `package.json` `version`; regenerate the client if the server's OpenAPI contract changed (`yarn gen:all:remote` in `mushpi-client/` — build-time lockstep, see **Client ↔ Server lockstep** above).
    The version bump is the **final commit on `dev`**, never on `main` after the merge.
@@ -234,10 +238,11 @@ All paths are relative to this repo's root unless a directory is given.
 4. **Open one `dev`→`main` PR per repo**, carrying a plain-language new/changed/fixed summary with **operator actions at the top** (re-flash, reconfigure, re-pair, migration). Opening a PR publishes nothing.
 5. **Merge each PR with a merge commit — never squash or rebase** — so `dev` stays an ancestor of `main` and `git log main..dev` keeps working as the unreleased query.
 6. **Verify the bundle:** in `mushpi-server/` `yarn build && yarn lint && yarn test && yarn test:e2e`; in `mushpi-client/` `yarn build && yarn lint`; optionally a mock integration run (the mock stands in for hardware — see subsection 7).
-7. **Write `release.json`** in this repo as the hub's release commit on `dev` (schema: **The release manifest** above), reading every value **live from its source of truth** — never from memory (a component that did not change keeps its previous version, so the four SemVer fields need not all be equal):
+7. **Write `release.json`** in this repo as the hub's release commit on `dev` (schema: **The release manifest** above), reading every value **live from its source of truth** — never from memory (a component that did not change keeps its previous version, so the five SemVer fields need not all be equal):
    - server: `jq -r .version mushpi-server/package.json`
    - client: `jq -r .version mushpi-client/package.json`
    - firmware: `grep -oP '_SOFTWARE_VERSION\s*=\s*"\K[^"]+' mushpi-grow/app/state.py`
+   - mock: `cat mushpi-mock/src/mushpi_mock/VERSION`
 
    `api_version` is sourced from the grow firmware/spec — **never** from the server's URI `API_VERSION`.
 8. **Materialize the four sub-repos** as transient clones inside this repo — `mushpi-server`, `mushpi-client`, `mushpi-grow`, `mushpi-mock` (they are gitignored; recipe in `REFERENCE.md`).
@@ -249,7 +254,7 @@ All paths are relative to this repo's root unless a directory is given.
 
 ### 7. Mock & bundle tests
 
-Whenever bundle tests run, the mock's **represented** firmware version (`src/mushpi_mock/VERSION`) must equal the manifest's `firmware` entry — otherwise the mock lies about what it emulates and the test proves nothing about the bundle. The mock is **not** a manifest field and never ships (see **The mock and `GET /version`** above). The mock's existing alignment check (grow `_SOFTWARE_VERSION` vs `src/mushpi_mock/VERSION`, see `mushpi-mock/AGENTS.md`) remains the guard; the pre-tag check below bakes that comparison into the release flow itself.
+Whenever bundle tests run, the mock's **simulated** firmware version (`src/mushpi_mock/state.py::_SOFTWARE_VERSION`) must equal the manifest's `firmware` entry — otherwise the mock lies about what it emulates and the test proves nothing about the bundle. The mock's **own** version (`src/mushpi_mock/VERSION`) is recorded in the manifest's `mock` field, independent of `firmware` (see **The mock and `GET /version`** above). The mock's existing alignment check (see `mushpi-mock/AGENTS.md`) remains the guard; the pre-tag check below bakes the manifest comparison into the release flow itself.
 
 ### 8. The CI guards
 
@@ -258,10 +263,10 @@ Whenever bundle tests run, the mock's **represented** firmware version (`src/mus
 The **manifest guard** enforces:
 
 - **tag ⇔ manifest** — the pushed tag `vX.Y.Z` must equal the tagged commit's `release.json` `release` field (and the manifest must exist at that commit);
-- **manifest shape** — the four SemVer strings plus an integer `api_version ≥ 1` (see **The release manifest** above);
+- **manifest shape** — the five SemVer strings plus an integer `api_version ≥ 1` (see **The release manifest** above);
 - **manifest ⇔ code being built** — the manifest's `server`/`client` must equal the checked-out sub-repos' `package.json` versions; this is what catches a tag cut before the sub-repo release commits were pushed.
 
-The **bundle-parity step** then runs `scripts/verify-release.sh "${GITHUB_REF_NAME}"`, cross-checking the manifest against every committed component version — server/client `package.json`, firmware `_SOFTWARE_VERSION` and the grow spec's `info.version`, and the mock's `VERSION`. This is why the grow and mock checkouts exist.
+The **bundle-parity step** then runs `scripts/verify-release.sh "${GITHUB_REF_NAME}"`, cross-checking the manifest against every committed component version — server/client `package.json`, firmware `_SOFTWARE_VERSION` against `firmware` and the mock's `VERSION` against `mock` (independent of each other), plus the grow spec's `info.version`. This is why the grow and mock checkouts exist.
 
 **What stays local:** the monotonicity check — that no version moved backward relative to `main:release.json`. CI checks out a single ref, so `main` is not available there and the script skips that comparison; the pre-tag check (subsection 9) covers it.
 
@@ -273,7 +278,7 @@ At this repo's root, with the four siblings materialized, just before tagging:
 ./scripts/verify-release.sh vX.Y.Z
 ```
 
-It must print `OK — release X.Y.Z is consistent`. It checks the manifest shape, the tag⇔`release` equality, that no version moved backward, that `release.json` matches the committed component versions (server/client `package.json`, firmware `_SOFTWARE_VERSION`, mock `VERSION`), and that each component's spec `info.version` matches. Requires `jq`.
+It must print `OK — release X.Y.Z is consistent`. It checks the manifest shape, the tag⇔`release` equality, that no version moved backward, that `release.json` matches the committed component versions (server/client `package.json`, firmware `_SOFTWARE_VERSION` against `firmware`, mock `VERSION` against `mock` — never against each other), and that each component's spec `info.version` matches. Requires `jq`.
 
 **Rollback** is just pinning the compose `image:` tag to the older `vX.Y.Z` image tag and `docker compose up -d`.
 
