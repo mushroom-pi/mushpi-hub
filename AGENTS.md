@@ -2,7 +2,7 @@
 
 This repo is the **release/packaging layer** for the Mushroom Pi system. It owns the container build, the compose service definitions, the release manifest, and the publish workflow. It publishes one image: `ghcr.io/mushroom-pi/mushpi-hub` — the server API and the built React dashboard on one port, the **hub** image, named after this repo.
 
-The demo environment — the demo compose stack, the mock image and the hosted deployment — is **not** built here. It lives in the private `mushpi-demo` repo, which is where the demo issues and the deployment records belong.
+The demo environment — the demo compose stack (which pulls the hub and mock images by tag) and the hosted deployment — is **not** built here. It lives in the private `mushpi-demo` repo, which is where the demo issues and the deployment records belong. The mock image is published from `mushpi-mock` on its own tag, not from here.
 
 It is **not a runtime tier** and contains no application code. The orchestration root (its sibling directory) owns the agent definitions, the full-stack architecture context, and the cross-repo contracts. The sub-repos — `mushpi-server`, `mushpi-client`, `mushpi-grow`, `mushpi-mock`, `mushpi-docs` — are sibling git repos, never vendored here.
 
@@ -23,7 +23,7 @@ On-demand gotchas for editing this layer live in [`REFERENCE.md`](./REFERENCE.md
 | `.gitignore` | Ignore-all-then-allowlist; the tracked set is exactly the packaging layer |
 | `LICENSE` | MIT — the packaging layer's licence, matching the application repositories |
 | `.env.example` | Env template (hub vars: `PICO_ANNOUNCE_SECRET` required; optional `MUSHPI_HUB_DATA_DIR`, `MUSHPI_HUB_IMAGE_TAG`, `APP_HTTPS_ENABLED`, the Swagger docs trio, and the opt-in rate-limit pair) (see `REFERENCE.md` §Rate limiting) |
-| `release.json` | Release manifest: `release`/`server`/`client`/`firmware` SemVer plus integer `api_version` |
+| `release.json` | Release manifest: `release`/`server`/`client`/`firmware`/`mock` SemVer plus integer `api_version` |
 | `scripts/verify-release.sh` | Release-consistency check: tag⇔manifest, manifest⇔committed component versions, spec versions |
 | `scripts/docker-entrypoint.sh` | Container entrypoint — root start, `/data` ownership fix, mDNS resolver start, then privilege drop; detail in `REFERENCE.md` |
 | `DEPLOYMENT.md` | Release-repo notes plus a pointer to the published operator guide (the operator-facing procedures now live on the documentation site, `github.com/mushroom-pi/mushpi-docs`). Human register |
