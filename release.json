@@ -1,7 +1,8 @@
 {
-  "release": "0.9.0",
-  "server": "0.9.0",
-  "client": "0.9.0",
+  "release": "0.9.1",
+  "server": "0.9.1",
+  "client": "0.9.1",
   "firmware": "0.9.0",
+  "mock": "0.9.1",
   "api_version": 1
 }

@@ -72,6 +72,7 @@ jobs:
             (.server   | test("^\\d+\\.\\d+\\.\\d+$")) and
             (.client   | test("^\\d+\\.\\d+\\.\\d+$")) and
             (.firmware | test("^\\d+\\.\\d+\\.\\d+$")) and
+            (.mock     | test("^\\d+\\.\\d+\\.\\d+$")) and
             (.api_version | type == "number" and . >= 1)
           ' release.json > /dev/null \
             || { echo "::error::release.json shape invalid (SemVer strings + integer api_version)"; exit 1; }

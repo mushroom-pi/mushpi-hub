@@ -17,10 +17,11 @@ release=$(jq -r .release release.json)
 server=$(jq -r .server release.json)
 client=$(jq -r .client release.json)
 firmware=$(jq -r .firmware release.json)
+mock=$(jq -r .mock release.json)
 api_version=$(jq -r .api_version release.json)
 
-# 1. shape: four plain SemVer strings + an integer api_version
-for v in "$release" "$server" "$client" "$firmware"; do
+# 1. shape: five plain SemVer strings + an integer api_version
+for v in "$release" "$server" "$client" "$firmware" "$mock"; do
   [[ "$v" =~ $SEMVER ]] || err "invalid version '$v' (want MAJOR.MINOR.PATCH, no suffixes)"
 done
 [[ "$api_version" =~ ^[1-9][0-9]*$ ]] || err "api_version must be an integer >= 1"
@@ -34,8 +35,8 @@ fi
 
 # 3. never move a version backward (compare to the previous manifest on main)
 if git show main:release.json >/dev/null 2>&1; then
-  for f in release server client firmware; do
-    prev=$(git show main:release.json | jq -r ".$f")
+  for f in release server client firmware mock; do
+    prev=$(git show main:release.json | jq -r ".$f // empty")
     cur=$(jq -r ".$f" release.json)
     if [ -n "$prev" ] && [ "$prev" != "$cur" ]; then
       lowest=$(printf '%s\n%s\n' "$prev" "$cur" | sort -V | head -n1)
@@ -53,7 +54,10 @@ mock_actual=$(git -C mushpi-mock show HEAD:src/mushpi_mock/VERSION | tr -d '[:sp
 [ "$server"   = "$srv_actual" ] || err "release.json server '$server' != committed '$srv_actual'"
 [ "$client"   = "$cli_actual" ] || err "release.json client '$client' != committed '$cli_actual'"
 [ "$firmware" = "$fw_actual" ]  || err "release.json firmware '$firmware' != committed '$fw_actual'"
-[ "$firmware" = "$mock_actual" ] || err "mock VERSION '$mock_actual' != firmware '$firmware'"
+# The mock's own version is verified against the manifest's `mock` field, not
+# against `firmware`: the mock may lead the firmware version it simulates
+# (e.g. mock 0.9.1 impersonating firmware 0.9.0). That divergence is deliberate.
+[ "$mock"     = "$mock_actual" ] || err "release.json mock '$mock' != committed '$mock_actual'"
 
 # 5. spec info.version must match the component version
 srv_spec=$(git -C mushpi-server show HEAD:spec/openapi.json | jq -r .info.version)
